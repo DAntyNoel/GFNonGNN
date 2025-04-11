@@ -135,7 +135,7 @@ def edge_dissimilarity_mask(x, edge_index, state, threshold=1.0):
 
     return mask
 
-def select_edge(x, edge_index, rollout_batch=None, state:torch.Tensor=None, edge_weight=None):
+def select_edge_algo(x, edge_index, rollout_batch=None, state:torch.Tensor=None, edge_weight=None):
     if state is None:
         if rollout_batch is None:
             raise ValueError("rollout_batch must be provided if state is not given")
@@ -153,7 +153,7 @@ def select_edge(x, edge_index, rollout_batch=None, state:torch.Tensor=None, edge
         if state.dim() == 2:
             state = state[0]
     # # test code
-    # print(f"select_edge: state shape={state.shape}")
+    # print(f"select_edge_algo: state shape={state.shape}")
     assert state.size(0) == x.size(0), \
         f"state size {state.size(0)} != num node {x.size(0)}"
     mask = edge_dissimilarity_mask(x, edge_index, state, threshold=0.5)

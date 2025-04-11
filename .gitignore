@@ -4,6 +4,8 @@ data*
 test*
 temp*
 tmp*
+wandb*
+
 
 .vscode*
 

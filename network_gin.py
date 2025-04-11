@@ -7,19 +7,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv, global_max_pool
+from torch_geometric.nn import GINConv, global_max_pool
 from torch_sparse import SparseTensor
 
 from gfn_core import (
     Algo,
     TransitionBuffer,
     get_num_edges,
-    get_pf_logits_from_alpha,
 )
 
 DEBUG_PRINT = False  
 
-class MLP_GAT(nn.Module):
+class MLP_GIN(nn.Module):
     """Construct two-layer MLP-type aggreator for GIN model"""
     def __init__(self, input_dim, hidden_dim, output_dim):
         super().__init__()
@@ -39,7 +38,7 @@ class MLP_GAT(nn.Module):
         h = F.relu(self.batch_norm(h))
         return self.linears[1](h)
     
-class GAT(nn.Module):
+class GIN(nn.Module):
     def __init__(self, params):
         super().__init__()
         self.params = params
@@ -47,11 +46,11 @@ class GAT(nn.Module):
         self.num_layers = params.gfn_num_layers
         self.output_dim = 1
         self.inp_embedding = nn.Embedding(2, params.gfn_hidden_dim)
-        self.gatlayers = nn.ModuleList()
+        self.ginlayers = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
         for layer in range(self.num_layers - 1):  # excluding the input layer
             mlp = MLP_GIN(self.hidden_dim, self.hidden_dim, self.hidden_dim)
-            self.gatlayers.append(GATConv(mlp, eps=0., train_eps=params.train_eps))
+            self.ginlayers.append(GINConv(mlp, eps=0., train_eps=params.train_eps))
             self.batch_norms.append(nn.BatchNorm1d(self.hidden_dim))
 
         # # linear functions for graph poolings of output of each layer
@@ -66,10 +65,10 @@ class GAT(nn.Module):
             nn.Linear(self.hidden_dim, self.output_dim)
         )
         self.drop = nn.Dropout(params.gfn_dropout)
-
+        # self.pool = # max_pool
     def forward(self, state, edge_index, edge_weight=None):
         if DEBUG_PRINT:
-            print(f"GAT forward: state.shape={state.shape}")
+            print(f"GIN forward: state.shape={state.shape}")
         h = self.inp_embedding(state)
         # Reshape h to (batch_size * num_nodes, hidden_dim)
         if h.dim() == 3:
@@ -77,10 +76,10 @@ class GAT(nn.Module):
             h = h.view(batch_size * num_nodes, -1)
             graph_batch = torch.arange(batch_size, device=h.device).repeat_interleave(num_nodes)
         hidden_rep = [h]
-        for i, layer in enumerate(self.gatlayers):
+        for i, layer in enumerate(self.ginlayers):
             if DEBUG_PRINT:
-                print(f"GAT layer {i}: h.shape={h.shape}")
-            h, alpha = layer(h, edge_index, return_attention_weights=True)
+                print(f"GIN layer {i}: h.shape={h.shape}")
+            h = layer(h, edge_index)
             h = self.batch_norms[i](h)
             h = F.relu(h)
             hidden_rep.append(h)
@@ -112,10 +111,7 @@ class GFNSample(torch.nn.Module):
     def forward(self, x, edge_index, edge_weight=None):
         '''
         x: (batch_size, num_nodes, dim_features)
-        edge_index: (2, num_edges) 
-
-        returns:
-        edge_index_selected: (2, selected_num_edges)
+        edge_index: (2, num_edges) or SparseTensor
         '''
         # TODO
         loss_gfn = None
@@ -124,7 +120,7 @@ class GFNSample(torch.nn.Module):
         rollout_batch, metric_ls = self.rollout(x, edge_index, edge_weight)
         self.buffer.add_batch(rollout_batch)
         # select edges
-        edge_index_selected = self.select_edge(x, edge_index, rollout_batch=rollout_batch)
+        edge_index_selected = Algo.select_edge(x, edge_index, rollout_batch=rollout_batch)
 
         # train
         batch_size = min(len(self.buffer), self.params.batch_size)
@@ -150,9 +146,13 @@ class GFNSample(torch.nn.Module):
             logr_next = batch['logr_next'] # (batch_size,)
             done = batch['done'] # (batch_size,)
 
-            two_states = torch.cat([state, state_next], dim=0)
-            pf_logits, _ = self.model_Pf(state, edge_index, edge_weight)[..., 0] # (batch_size, gfn_num_nodes+1)
-            _, flow_logits = self.model_F(two_states, edge_index, edge_weight)[..., 0] # (2 * batch_size,)
+            # Add terminal state
+            state_embed = torch.cat([state, done.unsqueeze(1)], dim=1) # (batch_size, gfn_num_nodes+1)
+            state_next_embed = torch.cat([state_next, done.unsqueeze(1)], dim=1) # (batch_size, gfn_num_nodes+1)
+
+            two_states_embed = torch.cat([state_embed, state_next_embed], dim=0)
+            pf_logits, _ = self.model_Pf(state_embed, edge_index, edge_weight)[..., 0] # (batch_size, gfn_num_nodes+1)
+            _, flow_logits = self.model_F(two_states_embed, edge_index, edge_weight)[..., 0] # (2 * batch_size,)
             # pb_logits = self.model_Pb(state_next, edge_index, edge_weight)[..., 0] # (batch_size, gfn_num_nodes)
             log_pf = F.log_softmax(pf_logits, dim=1)[torch.arange(batch_size), action] # (batch_size,)
             log_pb = torch.concatenate(
@@ -186,8 +186,7 @@ class GFNSample(torch.nn.Module):
 
         returns: dict
         -------
-        - state: (rollout_batch_size, num_edges, max_traj_len)
-        - hidden: (rollout_batch_size, gfn_num_nodes, max_traj_len)
+        - state: (rollout_batch_size, gfn_num_nodes, max_traj_len)
         - action: (rollout_batch_size, max_traj_len)
         - logr: (rollout_batch_size, max_traj_len)
         - done: (rollout_batch_size, max_traj_len)
@@ -201,7 +200,7 @@ class GFNSample(torch.nn.Module):
         ## init state
         traj_s, traj_r, traj_a, traj_d = [], [], [], []
         state, done = Algo.init_state(rollout_batch_size, gfn_num_nodes, x.device)
-        reward = self.reward_fn(self.select_edge(x, edge_index, state=state))
+        reward = self.reward_fn(Algo.select_edge(x, edge_index, state=state))
         while not torch.all(done):
             # sample action
             with torch.no_grad():
@@ -211,21 +210,21 @@ class GFNSample(torch.nn.Module):
                 action = action.to(state.device)
             traj_s.append(state.clone())
             traj_d.append(done.clone())
-            traj_r.append(reward.detach().clone())
+            traj_r.append(reward.item())
             traj_a.append(action)
             # step with action
             state, done = Algo.step(state, done, action, edge_index)
-            reward = self.reward_fn(self.select_edge(x, edge_index, state=state))
+            reward = self.reward_fn(Algo.select_edge(x, edge_index, state=state))
         ## save last state
         traj_s.append(state.clone())
         traj_d.append(done.clone())
-        traj_r.append(reward.detach().clone())
+        traj_r.append(reward.item())
 
         traj_s = torch.stack(traj_s, dim=2) # (rollout_batch_size, gfn_num_nodes, max_traj_len)
         """
         traj_s is the dense bool tensor form of the union of traj_a
         """
-        traj_a = torch.stack(traj_a, dim=1) # (rollout_batch_size, max_traj_len-1)
+        traj_a = torch.stack(traj_a, dim=1) # (rollout_batch_size, max_traj_len)
         """
         traj_a is tensor like 
         [ 4, 30, 86, 95, 96, 29, -1, -1],
@@ -239,7 +238,6 @@ class GFNSample(torch.nn.Module):
         [False, False, False, False, False, False, False,  True,  True],
         [False, False, False, False, False,  True,  True,  True,  True]
         """
-        traj_r = torch.stack(traj_r, dim=1) # (rollout_batch_size, max_traj_len)
         traj_len = 1 + torch.sum(~traj_d, dim=1) # (rollout_batch_size,)
 
         batch = {
@@ -251,26 +249,6 @@ class GFNSample(torch.nn.Module):
         }
         return batch, {}
    
-    def select_edge(self, x, edge_index, state=None, rollout_batch=None):
-        if state is None:
-            if rollout_batch is None:
-                raise ValueError("rollout_batch must be provided if state is not given")
-            traj_s = rollout_batch['state'] # (batch_size, gfn_num_nodes, max_traj_len)
-            traj_a = rollout_batch['action'] # (batch_size, max_traj_len)
-            traj_r = rollout_batch['logr'] # (batch_size, max_traj_len)
-            traj_d = rollout_batch['done'] # (batch_size, max_traj_len)
-            len = rollout_batch['len'] # (batch_size,)
-            # get the last logr for each batch
-            traj_r = traj_r[torch.arange(traj_r.size(0)), len - 1]
-            # get the highest logr batch id
-            b_idx = torch.argmax(traj_r, dim=0)
-            state = traj_s[b_idx, :, len[b_idx] - 1]
-        else:
-            if state.dim() == 2:
-                state = state[0]
-        
-        return new_edge_index
-
     # An offline model of GCN for evaluating the GFN model
     def set_evaluate_tools(self, gcn_model=None, criterion=None, x=None, y=None, mask=None):
         if gcn_model is not None:
