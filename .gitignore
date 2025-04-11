@@ -1,3 +1,13 @@
+debug*
+ref*
+data*
+test*
+temp*
+tmp*
+
+.vscode*
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
