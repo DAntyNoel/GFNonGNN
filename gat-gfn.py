@@ -30,41 +30,20 @@ else:
 init_wandb(name=f'GAT-{args.dataset}', heads=args.heads, epochs=args.epochs,
            hidden_channels=args.hidden_channels, lr=args.lr, device=device)
 
-path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'Planetoid')
-dataset = Planetoid(path, args.dataset, transform=T.Compose([T.NormalizeFeatures()]))
+path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'Planetoid')
+dataset = Planetoid(path, args.dataset, transform=T.NormalizeFeatures())
 data = dataset[0].to(device)
 
 
-class GATGFN(torch.nn.Module):
+class GAT(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, heads):
         super().__init__()
         self.conv1 = GATConv(in_channels, hidden_channels, heads, dropout=0.6)
         # On the Pubmed dataset, use `heads` output heads in `conv2`.
         self.conv2 = GATConv(hidden_channels * heads, out_channels, heads=1,
                              concat=False, dropout=0.6)
-        self.gfn_model = GATConv(in_channels, hidden_channels, heads, dropout=0.6,
-                                 add_self_loops=False)
 
     def forward(self, x, edge_index):
-        x = F.dropout(x, p=0.6, training=self.training)
-        _, alpha = self.gfn_model(x, edge_index, return_attention_weights=True)
-        # `alpha` is a tensor of shape [num_edges, heads] containing the attention
-        # weights for each edge. We can treat it as the pf_logits of GFN.
-        print(type(alpha[0]), alpha[0].shape)
-        print(type(edge_index), edge_index.shape)
-        print(type(alpha[1]), alpha[1].shape)
-        exit(0)
-        # pf_logits = get_logits(alpha)
-        # action = sample_from_pf_logits(pf_logits, edge_index)
-        # # `action` is a tensor of shape [num_edges] containing the sampled actions.
-        # edge_index = select_edges(edge_index, action)
-        x = self.conv1(x, edge_index)
-        x = F.elu(x)
-        x = F.dropout(x, p=0.6, training=self.training)
-        x = self.conv2(x, edge_index)
-        return x
-    
-    def forward_with_fixed_gfn(self, x, edge_index):
         x = F.dropout(x, p=0.6, training=self.training)
         x = F.elu(self.conv1(x, edge_index))
         x = F.dropout(x, p=0.6, training=self.training)
@@ -72,7 +51,7 @@ class GATGFN(torch.nn.Module):
         return x
 
 
-model = GATGFN(dataset.num_features, args.hidden_channels, dataset.num_classes,
+model = GAT(dataset.num_features, args.hidden_channels, dataset.num_classes,
             args.heads).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=5e-4)
 
