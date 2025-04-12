@@ -3,9 +3,11 @@ import torch.nn.functional as F
 
 from buffer import ReplayBufferDB
 from network import GATGFN
+from utils import get_logger
 
 class GFNBase(object):
-    def __init__(self):
+    def __init__(self, params):
+        self.check_step_action = params.check_step_action
         self.gnn_model = None
         self.criterion = None
         self.x = None
@@ -30,16 +32,19 @@ class GFNBase(object):
         if criterion is not None:
             self.criterion = criterion
         if x is not None:
-            self.x = x.to(self.params.device)
+            self.x = x
         if y is not None:
-            self.y = y.to(self.params.device)
+            self.y = y
         if mask is not None:
-            self.mask = mask.to(self.params.device)
+            self.mask = mask
             
     def reward_fn(self, edge_index, state):
+        x = self.x.to(edge_index.device)
+        y = self.y.to(edge_index.device)
+        mask = self.mask.to(edge_index.device)
         edge_index = edge_index[:, state]
         loss = self.criterion(
-            self.gnn_model.forward_with_fixed_gfn(self.x, edge_index)[self.mask], self.y[self.mask]
+            self.gnn_model.forward_with_fixed_gfn(x, edge_index)[mask], y[mask]
         )
         reward = torch.exp(-loss / self.params.reward_scale)
         return reward
@@ -66,7 +71,7 @@ class GFNBase(object):
         mask1 = action >= 0
         mask2 = action < e
         action_done = mask1 & mask2
-        if self.params.check_step_action:
+        if self.check_step_action:
             action_valid = action.clone().to(action.device)
             action_valid[action_done] = 0
             # Treat invalid action as done
@@ -88,7 +93,7 @@ def get_in_degree(s_, edge_index):
 
 class EdgeSelector(GFNBase):
     def __init__(self, params):
-        super().__init__()
+        super().__init__(params)
         self.model_Pf = GATGFN(params)
         self.model_F = GATGFN(params, graph_level_output=1)
         self.parameters_ls = [
@@ -108,8 +113,8 @@ class EdgeSelector(GFNBase):
         self.train_gfn_batch_size = params.train_gfn_batch_size
         self.optimizer = torch.optim.Adam(
             self.parameters_ls,
-            lr=params.lr,
-            weight_decay=params.weight_decay,
+            lr=params.gfn_lr,
+            weight_decay=params.gfn_weight_decay,
         )
         self.forward_looking = params.forward_looking
         self.leaf_coef = params.leaf_coef # Origin DB w/o forward looking

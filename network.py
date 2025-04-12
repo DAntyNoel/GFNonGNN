@@ -5,6 +5,8 @@ import torch.nn.functional as F
 
 from torch_geometric.nn import GATConv
 
+from utils import get_logger
+
 def get_degree(edge_index, num_nodes):
     '''
     Get the degree of each node in the graph

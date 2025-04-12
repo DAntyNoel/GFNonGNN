@@ -1,6 +1,8 @@
 import torch
 import random
 
+from utils import get_logger
+
 class ReplayBufferDB(object):
     def __init__(self, params):
         self.size = params.buffer_size

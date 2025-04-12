@@ -11,6 +11,8 @@ from torch_geometric.datasets import Planetoid
 from torch_geometric.logging import init_wandb, log
 from torch_geometric.nn import GCNConv
 
+from utils import get_logger
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='Cora')
 parser.add_argument('--hidden_channels', type=int, default=16)
