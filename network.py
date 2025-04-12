@@ -16,11 +16,13 @@ def get_degree(edge_index, num_nodes):
     Returns:
         degree: (num_nodes,)
     '''
-    degree = torch.zeros(num_nodes, dtype=torch.long)
-    degree.scatter_add_(0, edge_index[0], torch.ones(edge_index.size(1), dtype=torch.long))
-    degree.scatter_add_(0, edge_index[1], torch.ones(edge_index.size(1), dtype=torch.long))
+    degree = torch.zeros(num_nodes, dtype=torch.long, device=edge_index.device)
+    degree.scatter_add_(0, edge_index[0], torch.ones(edge_index.size(1), dtype=torch.long, device=edge_index.device))
+    degree.scatter_add_(0, edge_index[1], torch.ones(edge_index.size(1), dtype=torch.long, device=edge_index.device))
 
     return degree
+
+logger_GATGFN = get_logger('network', folder='logs')
 
 class GATGFN(torch.nn.Module):
     def __init__(self, params, graph_level_output=0):
@@ -32,7 +34,7 @@ class GATGFN(torch.nn.Module):
         self.dropout = params.gfn_dropout
         self.graph_level_output = graph_level_output
 
-        self.input_embedding = nn.Embedding(2, self.hidden_dim)
+        self.input_embedding = nn.Embedding(params.max_degree+1, self.hidden_dim)
         self.inp_transform = nn.Identity()
 
         self.policy_model = nn.ModuleList()
@@ -72,7 +74,7 @@ class GATGFN(torch.nn.Module):
             flows: (batch_size, )
         '''
         b, e = state.size()
-        x = get_degree(edge_index, edge_index.max().item()+1).to(state.device) # (num_nodes,)
+        x = get_degree(edge_index, edge_index.max().item()+1).to(edge_index.device) # (num_nodes,)
         x = self.input_embedding(x) # (num_nodes, hidden_dim)
         x = self.inp_transform(x) # (num_nodes, hidden_dim)
         x_ls, alpha_ls = [], []
@@ -89,11 +91,12 @@ class GATGFN(torch.nn.Module):
 
         # expand alpha_ls batch_size times and concate with state
         alpha_ls_expanded = alpha_ls.unsqueeze(0).repeat(b, 1, 1)  # (batch_size, num_edges, num_layers * heads)
-        state_expanded = state.unsqueeze(-1)  # (batch_size, num_edges, 1)
+        state_expanded = state.unsqueeze(2)  # (batch_size, num_edges, 1)
         concated = torch.cat((state_expanded, alpha_ls_expanded), dim=-1)  # (batch_size, num_edges, num_layers * heads + 1)
 
         x_logits = self.x_to_alpha(x_ls)  # (num_nodes, num_layers * heads + 1)
         x_logits_expanded = x_logits.unsqueeze(0).repeat(b, 1, 1)  # (batch_size, num_nodes, num_layers * heads + 1)
+        x_logits_expanded = x_logits_expanded.mean(dim=1).reshape(b, 1, -1)  # (batch_size, 1, num_layers * heads + 1)
 
         # concatenate x_logits_expanded as the TERMINAL state action logit
         logits = torch.concat((x_logits_expanded, concated), dim=1)  # (batch_size, num_edges + 1, num_layers * heads + 1)
@@ -122,7 +125,8 @@ class GATGFN(torch.nn.Module):
             pf_logits = self(state, edge_index)
             if self.graph_level_output > 0:
                 pf_logits = pf_logits[0]
-            state = torch.cat([state, done], dim=1) # (batch_size, num_edges+1)
+            pf_logits = pf_logits.reshape(b, -1)
+            state = torch.cat([state, done.unsqueeze(-1)], dim=1) # (batch_size, num_edges+1)
             pf_logits[state == 1] = -np.inf
             pf_undone = pf_logits[~done].softmax(dim=1)
             action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)

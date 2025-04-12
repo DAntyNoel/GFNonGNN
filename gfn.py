@@ -5,9 +5,13 @@ from buffer import ReplayBufferDB
 from network import GATGFN
 from utils import get_logger
 
+logger_GFNBase = get_logger('gfn', folder='logs')
+
 class GFNBase(object):
     def __init__(self, params):
+        self._params = params
         self.check_step_action = params.check_step_action
+        self.reward_scale = params.reward_scale
         self.gnn_model = None
         self.criterion = None
         self.x = None
@@ -17,18 +21,11 @@ class GFNBase(object):
     # An offline model of GCN for evaluating the GFN model, used in reward_fn
     def set_evaluate_tools(self, gnn_model=None, criterion=None, x=None, y=None, mask=None):
         if gnn_model is not None:
-            # path = self.params.temp_model_path
-            # if not osp.exists(path):
-            #     os.makedirs(path)
-            # file_name = 'frozen_model.pt'
-            # if not osp.exists(osp.join(path, file_name)):
-            #     os.system(f"touch {osp.join(path, file_name)}")
-            # path = osp.join(path, file_name)
-            # gcn_model.save_dict(path)
-            # frozen_gcn_model = type(gcn_model)(self.params)
-            # frozen_gcn_model.load_dict(path)
-            # self.gcn_model = frozen_gcn_model.eval().to(self.params.device)
-            self.gnn_model = gnn_model
+            if isinstance(gnn_model, str):
+                self.gnn_model = type(gnn_model)(self._params)
+                self.gnn_model.load_state_dict(torch.load(gnn_model), map_location=self.x.device)
+            else:
+                self.gnn_model = gnn_model
         if criterion is not None:
             self.criterion = criterion
         if x is not None:
@@ -39,15 +36,22 @@ class GFNBase(object):
             self.mask = mask
             
     def reward_fn(self, edge_index, state):
+        b, e = state.size()
         x = self.x.to(edge_index.device)
         y = self.y.to(edge_index.device)
         mask = self.mask.to(edge_index.device)
-        edge_index = edge_index[:, state]
-        loss = self.criterion(
-            self.gnn_model.forward_with_fixed_gfn(x, edge_index)[mask], y[mask]
-        )
-        reward = torch.exp(-loss / self.params.reward_scale)
-        return reward
+        reward_ls = []
+        # TODO 
+        for i in range(b):
+            state_i = state[i]
+            edge_index_i = edge_index[:, state_i==0]
+            loss = self.criterion(
+                self.gnn_model(x, edge_index_i)[mask], y[mask]
+            )
+            reward = torch.exp(-loss / self.reward_scale)
+            reward_ls.append(reward)
+        
+        return torch.stack(reward_ls, dim=0) # (batch_size,)
     
     def init_state(self, batch_size, num_edges):
         # Initialize the state and done variables
@@ -68,9 +72,9 @@ class GFNBase(object):
         '''
         b, e = state.size()
         # filter valid action. 
-        mask1 = action >= 0
-        mask2 = action < e
-        action_done = mask1 & mask2
+        mask1 = action < 0
+        mask2 = action >= e
+        action_done = mask1 | mask2
         if self.check_step_action:
             action_valid = action.clone().to(action.device)
             action_valid[action_done] = 0
@@ -79,7 +83,7 @@ class GFNBase(object):
             action_done = action_done | mask3
         done = done | action_done
         # update state
-        state[done][action[done]] = 1
+        state[~done][torch.arange(b, device=state.device)[~done], action[~done]] = 1
         return state, done
      
 
@@ -92,27 +96,28 @@ def get_in_degree(s_, edge_index):
     return in_degree
 
 class EdgeSelector(GFNBase):
-    def __init__(self, params):
+    def __init__(self, params, device):
         super().__init__(params)
-        self.model_Pf = GATGFN(params)
-        self.model_F = GATGFN(params, graph_level_output=1)
+        self.model_Pf = GATGFN(params).to(device)
+        self.model_F = GATGFN(params, graph_level_output=1).to(device)
         self.parameters_ls = [
-            self.model_Pf.parameters(),
-            self.model_F.parameters(),
+            list(self.model_Pf.parameters()),
+            list(self.model_F.parameters()),
         ]
         if params.use_pb:
-            self.model_Pb = GATGFN(params)
-            self.parameters_ls.append(self.model_Pb.parameters())
+            self.model_Pb = GATGFN(params).to(device)
+            self.parameters_ls.append(list(self.model_Pb.parameters()))
         else:
             self.model_Pb = None
         self.buffer = ReplayBufferDB(params)
 
         self.rollout_batch_size = params.rollout_batch_size
         self.num_edges = params.num_edges
+        self.max_traj_len = params.max_traj_len
 
         self.train_gfn_batch_size = params.train_gfn_batch_size
         self.optimizer = torch.optim.Adam(
-            self.parameters_ls,
+            [param for sublist in self.parameters_ls for param in sublist],
             lr=params.gfn_lr,
             weight_decay=params.gfn_weight_decay,
         )
@@ -125,15 +130,23 @@ class EdgeSelector(GFNBase):
         Args:
             edge_index: (2, num_edges)
         Returns:
-            edge_index: (2, num_edges)'''
+            edge_index: (2, num_edges_selected)'''
         state, done = self.init_state(self.rollout_batch_size, self.num_edges) # (rollout_batch_size, num_edges), (rollout_batch_size,)
-        reward = self.reward_fn(edge_index, state) # (rollout_batch_size,)
+        state = state.to(edge_index.device)
+        done = done.to(edge_index.device)
+        reward = self.reward_fn(edge_index.clone(), state) # (rollout_batch_size,)
         traj_s, traj_r, traj_a, traj_d =  [], [], [], []
+        action_cnt = 0
         while not torch.all(done):
             # Sample actions using the policy model
+            action_cnt += 1
+            logger_GFNBase.debug(f'sample Action count: {action_cnt}')
             action = self.model_Pf.action(state, done, edge_index) # (rollout_batch_size,)
             # Update the state and done variables based on the selected actions
             state, done = self.step(state, done, action)
+            if action_cnt > self.max_traj_len > 0:
+                logger_GFNBase.debug('Max trajectory length reached')
+                break
             reward = self.reward_fn(edge_index, state)
             traj_s.append(state.clone())
             traj_r.append(reward.clone())
@@ -178,7 +191,7 @@ class EdgeSelector(GFNBase):
         # Select final edges
         b_idx = torch.argmax(traj_r[torch.arange(self.rollout_batch_size), traj_len - 1], dim=0)
         state = traj_s[b_idx, :, traj_len[b_idx] - 1]
-        return edge_index[: state]
+        return edge_index[:, state]
 
     def train_gfn(self):
         '''
