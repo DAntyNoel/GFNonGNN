@@ -1,6 +1,6 @@
 # GFNonGNN
 
-GFNonGNN 是一个探索图神经网络（GNN）消息传递机制的项目，旨在通过图反馈网络（Graph Feedback Network, GFN）来优化 GNN 的边选择过程。该项目作为我的毕业论文实验，验证了 GFN 在图结构学习中的有效性。
+GFNonGNN 是一个探索图神经网络（GNN）消息传递机制的项目，旨在通过生成式流网络（Generative Flow Net, GFlowNet, GFN）来优化 GNN 的边选择过程。该项目作为我的毕业论文实验，验证了 GFN 在图结构学习中的有效性。
 
 ### 项目简介
 
@@ -16,14 +16,14 @@ GFNonGNN 是一个探索图神经网络（GNN）消息传递机制的项目，�
 
 ### 项目结构
 
-`base_models.py`：定义了基础的 GNN 模型。
-`gfn.py`：实现了 GFN 的核心逻辑，包括 `EdgeSelector` 类。
-`buffer.py`：定义了用于存储和采样数据的回放缓冲区。
-`utils.py`：提供了日志记录、参数解析等工具函数。
+- `base_models.py`：定义了基础的 GNN 模型。
+- `gfn.py`：实现了 GFN 的核心逻辑，包括 `EdgeSelector` 类。
+- `buffer.py`：定义了用于存储和采样数据的回放缓冲区。
+- `utils.py`：提供了日志记录、参数解析等工具函数。
 
 ---
 
-GFNonGNN is a project that explores the message passing mechanism of Graph Neural Networks (GNNs) and aims to optimize the edge selection process of GNNs through Graph Feedback Networks (GFNs). This project serves as my graduation thesis experiment and validates the effectiveness of GFNs in graph structure learning.
+GFNonGNN is a project that explores the message passing mechanism of Graph Neural Networks (GNNs) and aims to optimize the edge selection process of GNNs through Generative Flow Nets(GFlowNet, GFN). This project serves as my graduation thesis experiment and validates the effectiveness of GFNs in graph structure learning.
 
 ### Project Introduction
 
@@ -39,7 +39,7 @@ In GFNonGNN, the `EdgeSelector` class is a GFN-based component that integrates a
 
 ### Project Structure
 
-`base_models.py`: Defines the basic GNN models.
-`gfn.py`: Implements the core logic of GFNs, including the `EdgeSelector` class.
-`buffer.py`: Defines the replay buffer for storing and sampling data.
-`utils.py`: Provides utility functions for logging and argument parsing.
+- `base_models.py`: Defines the basic GNN models.
+- `gfn.py`: Implements the core logic of GFNs, including the `EdgeSelector` class.
+- `buffer.py`: Defines the replay buffer for storing and sampling data.
+- `utils.py`: Provides utility functions for logging and argument parsing.
