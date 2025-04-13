@@ -22,7 +22,7 @@ def get_degree(edge_index, num_nodes):
 
     return degree
 
-logger_GATGFN = get_logger('network', folder='logs')
+logger_GATGFN = get_logger('network')
 
 class GATGFN(torch.nn.Module):
     def __init__(self, params, graph_level_output=0):

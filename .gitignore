@@ -6,7 +6,7 @@ temp*
 test*
 tmp*
 wandb*
-
+old/*
 
 .vscode*
 

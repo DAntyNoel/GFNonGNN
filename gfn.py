@@ -5,7 +5,7 @@ from buffer import ReplayBufferDB
 from network import GATGFN
 from utils import get_logger
 
-logger_GFNBase = get_logger('gfn', folder='logs')
+logger_GFNBase = get_logger('gfn')
 
 class GFNBase(object):
     def __init__(self, params):
@@ -92,7 +92,6 @@ class GFNBase(object):
         state[torch.arange(b, device=state.device)[~done], action[~done]] = 1
         return state, done
      
-
 def get_in_degree(s_, edge_index):
     if s_ == edge_index.size(1):
         # The terminal edge
@@ -102,6 +101,9 @@ def get_in_degree(s_, edge_index):
     return in_degree
 
 class EdgeSelector(GFNBase):
+    '''
+    GFN model for edge selection
+    '''
     def __init__(self, params, device):
         super().__init__(params)
         self.model_Pf = GATGFN(params).to(device)
@@ -256,3 +258,17 @@ class EdgeSelector(GFNBase):
         loss.backward()
         self.optimizer.step()
         return loss.item()
+    
+    def state_dict(self):
+        return {
+            'model_Pf': self.model_Pf.state_dict(),
+            'model_F': self.model_F.state_dict(),
+            'model_Pb': self.model_Pb.state_dict() if self.model_Pb is not None else None,
+            'optimizer': self.optimizer.state_dict(),
+        }
+    def load_state_dict(self, state_dict):
+        self.model_Pf.load_state_dict(state_dict['model_Pf'])
+        self.model_F.load_state_dict(state_dict['model_F'])
+        if self.model_Pb is not None:
+            self.model_Pb.load_state_dict(state_dict['model_Pb'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
