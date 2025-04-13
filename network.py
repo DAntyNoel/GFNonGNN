@@ -108,13 +108,14 @@ class GATGFN(torch.nn.Module):
         
         return pf_logits 
 
-    def action(self, state, done, edge_index):
+    def action(self, state, done, edge_index, length_penalty=0.):
         '''
-        Sample actions using the policy model
+        Sample actions using the policy model. If length_penalty -> 1, the action will tend to sample done.
         Args:
             state: (batch_size, num_edges)
             done: (batch_size,)
             edge_index: (2, num_edges)
+            length_penalty: float
         Returns:
             action: (batch_size,)
         '''
@@ -129,5 +130,12 @@ class GATGFN(torch.nn.Module):
             state = torch.cat([state, done.unsqueeze(-1)], dim=1) # (batch_size, num_edges+1)
             pf_logits[state == 1] = -np.inf
             pf_undone = pf_logits[~done].softmax(dim=1)
+            pf_undone[:, -1] = pf_undone[:, -1] + length_penalty
+            pf_undone[:, :-1] = pf_undone[:, :-1] * (1. - length_penalty)
             action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)
+            # logger_GATGFN.debug(f"action policy model pf_logits shape: {pf_logits.shape}")
+            # logger_GATGFN.debug(f"action policy model logits shape: {pf_logits.shape}")
+            # logger_GATGFN.debug(f"action policy model length_penalty: {length_penalty}")
+            # logger_GATGFN.debug(f"action policy model samples: {action}")
+            # logger_GATGFN.debug(f"action policy model done: {done}")
             return action

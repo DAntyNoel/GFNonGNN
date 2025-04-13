@@ -51,8 +51,8 @@ class ReplayBufferDB(object):
             traj_len_bidx = traj_len[b_idx]
             for i in range(traj_len_bidx - 1):
                 transition = (
-                    traj_s[b_idx, i],    # s
-                    traj_s[b_idx, i+1],  # s_next
+                    traj_s[b_idx, :, i],    # s
+                    traj_s[b_idx, :, i+1],  # s_next
                     traj_d[b_idx, i+1],  # d
                     traj_a[b_idx, i],    # a
                     traj_r[b_idx, i],    # r

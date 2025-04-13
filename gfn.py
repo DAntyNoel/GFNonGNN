@@ -22,8 +22,7 @@ class GFNBase(object):
     def set_evaluate_tools(self, gnn_model=None, criterion=None, x=None, y=None, mask=None):
         if gnn_model is not None:
             if isinstance(gnn_model, str):
-                self.gnn_model = type(gnn_model)(self._params)
-                self.gnn_model.load_state_dict(torch.load(gnn_model), map_location=self.x.device)
+                self.gnn_model.load_state_dict(torch.load(gnn_model, map_location=self.x.device))
             else:
                 self.gnn_model = gnn_model
         if criterion is not None:
@@ -83,7 +82,14 @@ class GFNBase(object):
             action_done = action_done | mask3
         done = done | action_done
         # update state
-        state[~done][torch.arange(b, device=state.device)[~done], action[~done]] = 1
+        # logger_GFNBase.debug(f"step action: {action}")
+        # logger_GFNBase.debug(f"step done: {done}")
+        # logger_GFNBase.debug(f"step state: {state}")
+        # logger_GFNBase.debug(f"step state.shape: {state.shape}")
+        # logger_GFNBase.debug(f"step action[~done]: {action[~done]}")
+        # logger_GFNBase.debug(f"step torch.arange(b, device=state.device): {torch.arange(b, device=state.device)}")
+        # logger_GFNBase.debug(f"step state[~done].shape: {state[~done].shape}")
+        state[torch.arange(b, device=state.device)[~done], action[~done]] = 1
         return state, done
      
 
@@ -136,12 +142,10 @@ class EdgeSelector(GFNBase):
         done = done.to(edge_index.device)
         reward = self.reward_fn(edge_index.clone(), state) # (rollout_batch_size,)
         traj_s, traj_r, traj_a, traj_d =  [], [], [], []
-        action_cnt = 0
         while not torch.all(done):
             # Sample actions using the policy model
-            action_cnt += 1
-            logger_GFNBase.debug(f'sample Action count: {action_cnt}')
-            action = self.model_Pf.action(state, done, edge_index) # (rollout_batch_size,)
+            action_cnt = len(traj_s)
+            action = self.model_Pf.action(state, done, edge_index, length_penalty=float(action_cnt/self.max_traj_len)) # (rollout_batch_size,)
             # Update the state and done variables based on the selected actions
             state, done = self.step(state, done, action)
             if action_cnt > self.max_traj_len > 0:
@@ -152,10 +156,12 @@ class EdgeSelector(GFNBase):
             traj_r.append(reward.clone())
             traj_a.append(action)
             traj_d.append(done.clone())
+        
         # save last state
         traj_s.append(state.clone())
         traj_d.append(done.clone())
         traj_r.append(reward.detach().clone())
+        logger_GFNBase.debug(f"sample traj_len: {len(traj_s)}")
         
         traj_s = torch.stack(traj_s, dim=2) # (rollout_batch_size, num_edges, max_traj_len)
         """
@@ -191,7 +197,7 @@ class EdgeSelector(GFNBase):
         # Select final edges
         b_idx = torch.argmax(traj_r[torch.arange(self.rollout_batch_size), traj_len - 1], dim=0)
         state = traj_s[b_idx, :, traj_len[b_idx] - 1]
-        return edge_index[:, state]
+        return edge_index[:, state==0]
 
     def train_gfn(self):
         '''
@@ -199,7 +205,7 @@ class EdgeSelector(GFNBase):
         '''
         # Sample a batch of rollout batches from the replay buffer
         batch_size = self.train_gfn_batch_size
-        batch = self.buffer.DB_sample_batch(batch_size)
+        batch = self.buffer.DB_sample_batch()
         # s, s_next, d, a, r, r_next, edge_index = batch # Tuple form
         state = batch['s'] # (batch_size, num_edges)
         state_next = batch['s_next'] # (batch_size, num_edges)
@@ -214,8 +220,9 @@ class EdgeSelector(GFNBase):
         log_pf = torch.zeros(batch_size, device=state.device)
         flows = torch.zeros(batch_size, device=state.device)
         flows_next = torch.zeros(batch_size, device=state.device)
-        log_pb = torch.concatenate(
+        log_pb = torch.tensor(
             [1 / get_in_degree(a, e) for a, e in zip(action, edge_index_ls)],
+            device=state.device
         )
 
         for i in range(batch_size):
@@ -234,8 +241,8 @@ class EdgeSelector(GFNBase):
             
         if self.forward_looking:
             flows_next.masked_fill_(done, 0.)
-            lhs = logr + flows + log_pf # (batch_size,)
-            rhs = logr_next + flows_next + log_pb
+            lhs = logr.detach() + flows + log_pf # (batch_size,)
+            rhs = logr_next.detach() + flows_next + log_pb
             loss = (lhs - rhs).pow(2)
             loss = loss.mean()
         else:

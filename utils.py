@@ -7,12 +7,14 @@ class Argument(Tap):
     dataset: str = 'Cora'
     hidden_channels: int = 16
     lr: float = 0.01
-    epochs: int = 200
+    epochs: int = 400
     use_gdc: bool = False
     wandb: bool = False
 
     save_path: str = 'test'
     best_model_path: str = '' # to be set later
+    gfn_train_interval: int = 20
+    gfn_train_steps: int = 20
 
     # GATGFN @ network.py
     gfn_hidden_dim: int = 128
@@ -23,9 +25,9 @@ class Argument(Tap):
     
     # EdgeSelector @ gfn.py
     use_pb: bool = False
-    rollout_batch_size: int = 16
+    rollout_batch_size: int = 4
     num_edges: int = 0 # to be set later
-    max_traj_len: int = 32
+    max_traj_len: int = 64
     train_gfn_batch_size: int = 32
     gfn_lr: float = 0.001
     gfn_weight_decay: float = 0.0001
@@ -42,15 +44,23 @@ class Argument(Tap):
 
 
 def get_logger(name, folder=None):
-    logging.basicConfig(level=logging.DEBUG)
+
     logger = logging.getLogger(osp.basename(name))
-    log_format = logging.Formatter('%(asctime)s %(name)-8s %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    logger.setLevel(logging.DEBUG)
+    log_format_cmd = logging.Formatter('%(message)s')
+    log_format_file = logging.Formatter('%(asctime)s %(name)-8s %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)  
+    console_handler.setFormatter(log_format_cmd)
+    logger.addHandler(console_handler)
+
     if folder:
         os.makedirs(folder, exist_ok=True)
         with open(osp.join(folder, 'debug.log'), 'w') as f:
             f.write('')
         file_handler = logging.FileHandler(osp.join(folder, 'debug.log'))
         file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(log_format)
+        file_handler.setFormatter(log_format_file)
         logger.addHandler(file_handler)
     return logger
