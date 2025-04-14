@@ -5,29 +5,33 @@ from tap import Tap # typed-argument-parser
 
 class Argument(Tap):
     project_name: str = 'GFNonGNN'
-    dataset: str = 'Cora'
+    dataset: str = 'CiteSeer'
     device: str = 'cuda'
-    lr: float = 0.01
-    epochs: int = 200
     use_gdc: bool = False
     wandb: bool = False
-    use_gfn: bool = True
     task_name: str = ''
     overwrite: bool = False # overwrite existing tasks
+
+    sweep_id: str|None = None # Only be set in agent.py. Keep None when directly run main.py
+
+    lr: float = 0.005
+    epochs: int = 200
     save_interval: int = 0 # -1 not save; 0 only save last; >0 save interval
     eval_interval: int = 5
-
-    # GNN @ base_models.py
-    in_channels: int = 0         # to be set later
-    hidden_channels: int = 16
-    out_channels: int = 0        # to be set later
-    num_layers: int = 3
+    use_gfn: bool = True
+    patience: int = 20 # Early stopping patience
 
     save_path: str = 'test'
     best_gnn_model_path: str = ''    # to be set later
     best_gfn_model_path: str = ''    # to be set later
     gfn_train_interval: int = 20
     gfn_train_steps: int = 20
+
+    # GNN @ base_models.py
+    in_channels: int = 0         # to be set later
+    hidden_channels: int = 32
+    out_channels: int = 0        # to be set later
+    num_layers: int = 4
 
     # GATGFN @ network.py
     gfn_hidden_dim: int = 128
@@ -38,7 +42,7 @@ class Argument(Tap):
     
     # EdgeSelector @ gfn.py
     use_pb: bool = False
-    rollout_batch_size: int = 4
+    rollout_batch_size: int = 8
     num_edges: int = 0           # to be set later
     max_traj_len: int = 64
     train_gfn_batch_size: int = 32

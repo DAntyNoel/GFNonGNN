@@ -133,9 +133,4 @@ class GATGFN(torch.nn.Module):
             pf_undone[:, -1] = pf_undone[:, -1] + length_penalty
             pf_undone[:, :-1] = pf_undone[:, :-1] * (1. - length_penalty)
             action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)
-            # logger_GATGFN.debug(f"action policy model pf_logits shape: {pf_logits.shape}")
-            # logger_GATGFN.debug(f"action policy model logits shape: {pf_logits.shape}")
-            # logger_GATGFN.debug(f"action policy model length_penalty: {length_penalty}")
-            # logger_GATGFN.debug(f"action policy model samples: {action}")
-            # logger_GATGFN.debug(f"action policy model done: {done}")
             return action

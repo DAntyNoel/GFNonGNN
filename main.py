@@ -93,19 +93,33 @@ def get_next_run_name(project_name, base_name):
 
     return f"{base_name}-{next_index}"
 
-def run(args:Argument):
+def run(args:Argument, search_k_vs:dict={}):
     data, params = get_dataset(args)
     params, model_gnn, optimizer, GFN = get_models(params, data)
     if params.task_name:
         params.save(osp.join(params.save_path, 'params.json'))
     
     if params.wandb:
+        param_dict = params.as_dict()
+        if search_k_vs != {}:
+            # agent.py
+            for key in search_k_vs.keys():
+                logger.debug(f"Key {key} is in search space. Skip wandb init config.")
+                param_dict.pop(key)
+
         wandb.init(
             project=params.project_name,
             name=params.task_name,
-            config=params.as_dict(),
+            config=param_dict,
             dir=params.save_path,
         )
+
+        if search_k_vs != {}:
+            # agent.py
+            for key in search_k_vs.keys():
+                logger.debug(f"Key {key} is in search space. Set from wandb config {wandb.config[key]}.")
+                setattr(params, key, wandb.config[key])
+                
         wandb.define_metric('step_GNN', step_metric='step_GNN', hidden=True)
         wandb.define_metric('step_GFN', step_metric='step_GFN', hidden=True)
         wandb.define_metric('loss/GNN', step_metric='step_GNN')
@@ -114,7 +128,7 @@ def run(args:Argument):
 
     logger.info(f'Device: {params.device}')
     best_val_acc = test_acc = 0
-    gfn_train_cnt = 0
+    gfn_train_cnt = bad_cnt = 0
     for epoch in range(1, params.epochs + 1):
         start = time.time()
         # train
@@ -125,7 +139,7 @@ def run(args:Argument):
         loss.backward()
         optimizer.step()
         logger.info(
-            f'Epoch: {epoch:03d}, \n'
+            f'Epoch: {epoch:04d}, \n'
             f'Loss: {float(loss):.4f}'
         )
         if params.wandb:
@@ -136,7 +150,7 @@ def run(args:Argument):
             GFN.set_evaluate_tools(
                 params.best_gnn_model_path, F.cross_entropy, data.x, data.y, data.train_mask
             )
-            logg_gfn_ls = []
+            loss_gfn_ls = []
             time_gfn_ls = []
             
             for train_step in range(1, params.gfn_train_steps+1):
@@ -147,17 +161,17 @@ def run(args:Argument):
                     f'Step: {train_step}, Total: {gfn_train_cnt}\n'
                     f'GFN_Loss: {loss_gfn:.4f}'
                 )
-                logg_gfn_ls.append(loss_gfn)
+                loss_gfn_ls.append(loss_gfn)
                 time_gfn_ls.append(time.time() - start_time)
 
                 if params.wandb:
                     wandb.log({'loss/GFN': loss_gfn, "step_GFN":gfn_train_cnt})
 
-            logg_gfn_ls = torch.tensor(logg_gfn_ls)
+            loss_gfn_ls = torch.tensor(loss_gfn_ls)
 
             logger.info(
                 f"GFN train done! Trained steps: {params.gfn_train_steps}. Total train steps: {gfn_train_cnt}\n"
-                f"GFN Loss: From {logg_gfn_ls[0]:.4f} to {logg_gfn_ls[-1]:.4f}. Min: {logg_gfn_ls.min().item():.4f}. Avg: {logg_gfn_ls.mean().item():.4f}\n"
+                f"GFN Loss: From {loss_gfn_ls[0]:.4f} to {loss_gfn_ls[-1]:.4f}. Min: {loss_gfn_ls.min().item():.4f}. Avg: {loss_gfn_ls.mean().item():.4f}\n"
                 f"GFN Time: {sum(time_gfn_ls):.4f}s. Median time per epoch: {torch.tensor(time_gfn_ls).median():.4f}s"
             )
 
@@ -172,12 +186,18 @@ def run(args:Argument):
             train_acc, val_acc, tmp_test_acc = accs
 
             if val_acc > best_val_acc:
+                bad_cnt = 0
                 logger.info(f'Best val at epoch {epoch}. Saved model!')
                 torch.save(model_gnn.state_dict(), params.best_gnn_model_path)
                 best_val_acc = val_acc
                 test_acc = tmp_test_acc
                 if GFN is not None:
                     torch.save(GFN.state_dict(), params.best_gfn_model_path)
+            else:
+                bad_cnt += 1
+                if bad_cnt > params.patience > 0:
+                    logger.info(f'No improvement for {params.patience} epochs. Early stopping!')
+                    break
 
             logger.info(
                 f'Eval Accuracy: \n'
@@ -200,6 +220,7 @@ def run(args:Argument):
         save_models(model_gnn, GFN, params)
     if params.wandb:
         wandb.finish()
+        wandb.run.summary["best_val_acc"] = best_val_acc
 
 
 if __name__ == '__main__':
