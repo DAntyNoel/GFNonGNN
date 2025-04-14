@@ -2,6 +2,7 @@ import os
 import os.path as osp
 import shutil
 import time
+import wandb
 
 import torch
 import torch.nn as nn
@@ -9,7 +10,6 @@ import torch.nn.functional as F
 
 import torch_geometric.transforms as T
 from torch_geometric.datasets import Planetoid
-from torch_geometric.logging import init_wandb, log
 
 from base_models import GCN
 
@@ -77,18 +77,44 @@ def save_models(gnn_model, GFN:EdgeSelector, params:Argument, epoch=-1):
         torch.save(GFN.state_dict(), gfn_model_path)
     logger.info(f'Saved models at {params.save_path}!')
 
+def get_next_run_name(project_name, base_name):
+    api = wandb.Api()
+    runs = api.runs(f"{project_name}")
+    existing_names = [run.name for run in runs]
+    existing_indices = []
+    for name in existing_names:
+        if name.startswith(base_name):
+            try:
+                index = int(name[len(base_name)+1:])
+                existing_indices.append(index)
+            except ValueError:
+                pass
+    next_index = max(existing_indices, default=0) + 1
+
+    return f"{base_name}-{next_index}"
+
 def run(args:Argument):
     data, params = get_dataset(args)
     params, model_gnn, optimizer, GFN = get_models(params, data)
-    if params.wandb:
-        init_wandb(name=f'GCN-{params.dataset}', epochs=params.epochs,
-                   hidden_channels=params.hidden_channels, lr=params.lr, device=params.device)
     if params.task_name:
         params.save(osp.join(params.save_path, 'params.json'))
+    
+    if params.wandb:
+        wandb.init(
+            project=params.project_name,
+            name=params.task_name,
+            config=params.as_dict(),
+            dir=params.save_path,
+        )
+        wandb.define_metric('step_GNN', step_metric='step_GNN', hidden=True)
+        wandb.define_metric('step_GFN', step_metric='step_GFN', hidden=True)
+        wandb.define_metric('loss/GNN', step_metric='step_GNN')
+        wandb.define_metric('loss/GFN', step_metric='step_GFN')
+        wandb.define_metric('acc/*', step_metric='step_GNN')
+
     logger.info(f'Device: {params.device}')
     best_val_acc = test_acc = 0
     gfn_train_cnt = 0
-    times = []
     for epoch in range(1, params.epochs + 1):
         start = time.time()
         # train
@@ -98,30 +124,13 @@ def run(args:Argument):
         loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
         loss.backward()
         optimizer.step()
-        # test
-        with torch.no_grad():
-            model_gnn.eval()
-            pred = model_gnn(data.x, data.edge_index, GFN).argmax(dim=-1)
-            accs = []
-            for mask in [data.train_mask, data.val_mask, data.test_mask]:
-                accs.append(int((pred[mask] == data.y[mask]).sum()) / int(mask.sum()))
-        train_acc, val_acc, tmp_test_acc = accs
-
-        if val_acc > best_val_acc:
-            logger.info(f'Best val at epoch {epoch}. Saved model!')
-            torch.save(model_gnn.state_dict(), params.best_gnn_model_path)
-            best_val_acc = val_acc
-            test_acc = tmp_test_acc
-            if GFN is not None:
-                torch.save(GFN.state_dict(), params.best_gfn_model_path)
-
         logger.info(
-            f'Epoch: {epoch:03d},\n'
-            f'Loss: {float(loss):.4f},\n'
-            f'Train: {train_acc:.4f}, Val: {val_acc:.4f}, Test: {tmp_test_acc:.4f},\n'
-            f'Best Val: {best_val_acc:.4f}, Test: {test_acc:.4f}'
+            f'Epoch: {epoch:03d}, \n'
+            f'Loss: {float(loss):.4f}'
         )
-        times.append(time.time() - start)
+        if params.wandb:
+            wandb.log({'loss/GNN': float(loss), 'step_GNN': epoch})
+
         if params.use_gfn and epoch % params.gfn_train_interval == 0:
             logger.info(f'GFN train at epoch {epoch}!')
             GFN.set_evaluate_tools(
@@ -140,25 +149,64 @@ def run(args:Argument):
                 )
                 logg_gfn_ls.append(loss_gfn)
                 time_gfn_ls.append(time.time() - start_time)
+
+                if params.wandb:
+                    wandb.log({'loss/GFN': loss_gfn, "step_GFN":gfn_train_cnt})
+
             logg_gfn_ls = torch.tensor(logg_gfn_ls)
+
             logger.info(
                 f"GFN train done! Trained steps: {params.gfn_train_steps}. Total train steps: {gfn_train_cnt}\n"
                 f"GFN Loss: From {logg_gfn_ls[0]:.4f} to {logg_gfn_ls[-1]:.4f}. Min: {logg_gfn_ls.min().item():.4f}. Avg: {logg_gfn_ls.mean().item():.4f}\n"
                 f"GFN Time: {sum(time_gfn_ls):.4f}s. Median time per epoch: {torch.tensor(time_gfn_ls).median():.4f}s"
             )
+
+        if epoch % params.eval_interval == 0 or epoch == params.epochs:
+            # test
+            with torch.no_grad():
+                model_gnn.eval()
+                pred = model_gnn(data.x, data.edge_index, GFN).argmax(dim=-1)
+                accs = []
+                for mask in [data.train_mask, data.val_mask, data.test_mask]:
+                    accs.append(int((pred[mask] == data.y[mask]).sum()) / int(mask.sum()))
+            train_acc, val_acc, tmp_test_acc = accs
+
+            if val_acc > best_val_acc:
+                logger.info(f'Best val at epoch {epoch}. Saved model!')
+                torch.save(model_gnn.state_dict(), params.best_gnn_model_path)
+                best_val_acc = val_acc
+                test_acc = tmp_test_acc
+                if GFN is not None:
+                    torch.save(GFN.state_dict(), params.best_gfn_model_path)
+
+            logger.info(
+                f'Eval Accuracy: \n'
+                f'Train: {train_acc:.4f}, Val: {val_acc:.4f}, Test: {tmp_test_acc:.4f},\n'
+                f'Best Val: {best_val_acc:.4f}, Test: {test_acc:.4f}'
+            )
+
+            if params.wandb:
+                wandb.log({
+                    'acc/train': train_acc,
+                    'acc/val': val_acc,
+                    'acc/test': tmp_test_acc,
+                    'step_GNN': epoch
+                })
+            
         if params.save_interval > 0 and epoch % params.save_interval == 0:
             save_models(model_gnn, GFN, params, epoch)
 
     if params.save_interval >= 0:
         save_models(model_gnn, GFN, params)
+    if params.wandb:
+        wandb.finish()
 
-    print(f'Total time: {sum(times):.4f}s')
-    print(f'Median time per epoch: {torch.tensor(times).median():.4f}s')
 
 if __name__ == '__main__':
     args = Argument().parse_args()
     if args.task_name != '':
         # setup task env
+        args.task_name = get_next_run_name(args.project_name, args.task_name)
         save_path = osp.join(args.save_path, args.task_name)
         if os.path.exists(save_path):
             if args.overwrite:
@@ -167,7 +215,7 @@ if __name__ == '__main__':
                 raise ValueError(f'Task folder {save_path} already exists. Use --overwrite to overwrite.')
         os.makedirs(save_path, exist_ok=True)
         args.save_path = save_path
-        logger = get_logger('GCN', task_folder=args.save_path)
+        logger = get_logger('GNN', task_folder=args.save_path)
     else:
-        logger = get_logger('GCN')
+        logger = get_logger('GNN')
     run(args)

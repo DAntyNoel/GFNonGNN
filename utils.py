@@ -4,8 +4,9 @@ import os.path as osp
 from tap import Tap # typed-argument-parser
 
 class Argument(Tap):
+    project_name: str = 'GFNonGNN'
     dataset: str = 'Cora'
-    device: str = 'cuda' # 'cuda' or 'cpu'
+    device: str = 'cuda'
     lr: float = 0.01
     epochs: int = 200
     use_gdc: bool = False
@@ -14,6 +15,7 @@ class Argument(Tap):
     task_name: str = ''
     overwrite: bool = False # overwrite existing tasks
     save_interval: int = 0 # -1 not save; 0 only save last; >0 save interval
+    eval_interval: int = 5
 
     # GNN @ base_models.py
     in_channels: int = 0         # to be set later
@@ -56,10 +58,12 @@ class Argument(Tap):
     def configure(self):
         self.add_argument('-N', '--epochs')
         self.add_argument('-o', '--overwrite')
+        self.add_argument('-w', '--wandb')
         self.add_argument('-n', '--task_name')
+        self.add_argument('-p', '--project_name')
 
 
-def get_logger(name, task_folder=None, debug_folder='debug-logs'):
+def get_logger(name, task_folder=None, debug_folder='logs'):
 
     logger = logging.getLogger(osp.basename(name))
     logger.setLevel(logging.DEBUG)
