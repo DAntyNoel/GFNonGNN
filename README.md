@@ -14,6 +14,44 @@ GFNonGNN 是一个探索图神经网络（GNN）消息传递机制的项目，�
 - 实现：基于 PyTorch 和 PyTorch Geometric，利用 GAT 的注意力机制评估边的重要性。
 - 应用场景：适用于需要动态边选择的图学习任务，如节点分类、图分类等。
 
+#### 核心算法
+
+##### GNN
+
+给定初始图$\mathcal{G}(V, E)$和节点特征$X\in \mathbb{R}^{|V|\times F}$:
+
+$$
+\begin{align*}
+    \hat{Y}={\text{GNN}}(X, E)
+\end{align*}
+$$
+##### GFNonGNN
+
+给定初始图$\mathcal{G}(V, E)$和节点特征$X\in \mathbb{R}^{|V|\times F}$:
+$$
+\begin{align*}
+    \hat{Y}&={\text{GNN}}(X, \text{GFN}(E))
+\end{align*}
+$$
+   
+##### Algorithm: GFlowNet Training
+
+**Require:** Training data $D$, a frozen GNN model $M_{\phi}$  
+**Output:** Trained GFlowNet model
+
+**repeat** until some convergence condition
+1. Sample a graph $g$ from dataset $D$
+2. **for** each step in train_steps **do**
+   1. Sample $S_n$ and $S_{n+1}$ from an edge
+   2. Compute $r_n$ and $r_{n+1}$ using $\text{Reward}(S_n, S_{n+1})$
+   3. **if** algo is forward-looking **then**
+      1. Compute loss with Eq.
+   4. **else**
+      1. Compute loss with Eq.
+   5. **end if**
+   6. Update $\theta$ with loss
+3. **end for**
+
 ### 项目结构
 
 - `base_models.py`：定义了基础的 GNN 模型。
