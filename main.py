@@ -3,9 +3,9 @@ import os.path as osp
 import shutil
 import time
 import wandb
+import logging
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 import torch_geometric.transforms as T
@@ -16,8 +16,6 @@ from base_models import GCN
 from utils import get_logger, Argument
 from network import get_degree
 from gfn import EdgeSelector
-
-logger = get_logger('GNN')
 
 def get_dataset(params:Argument):
     path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'Planetoid')
@@ -95,7 +93,7 @@ def get_next_run_name(project_name, base_name):
 
     return f"{base_name}-{next_index}"
 
-def run(args:Argument, search_k_vs:dict={}):
+def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
     data, params = get_dataset(args)
     params, model_gnn, optimizer, GFN = get_models(params, data)
     if params.task_name:
@@ -134,6 +132,7 @@ def run(args:Argument, search_k_vs:dict={}):
     best_val_acc = test_acc = 0
     gfn_train_cnt = bad_cnt = 0
     for epoch in range(1, params.epochs + 1):
+        logger.debug(f"run HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         start = time.time()
         # train
         model_gnn.train()
@@ -151,6 +150,7 @@ def run(args:Argument, search_k_vs:dict={}):
 
         if not params.gnn_only and epoch % params.gfn_train_interval == 0:
             logger.info(f'GFN train at epoch {epoch}!')
+            logger.debug(f"run HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             GFN.set_evaluate_tools(
                 params.best_gnn_model_path, F.cross_entropy, data.x, data.y, data.train_mask
             )
@@ -188,6 +188,7 @@ def run(args:Argument, search_k_vs:dict={}):
                 for mask in [data.train_mask, data.val_mask, data.test_mask]:
                     accs.append(int((pred[mask] == data.y[mask]).sum()) / int(mask.sum()))
             train_acc, val_acc, tmp_test_acc = accs
+            logger.debug(f"run HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
 
             if val_acc > best_val_acc:
                 bad_cnt = 0
@@ -240,5 +241,7 @@ if __name__ == '__main__':
                 raise ValueError(f'Task folder {save_path} already exists. Use --overwrite to overwrite.')
         os.makedirs(save_path, exist_ok=True)
         args.save_path = save_path
-        logger = get_logger('GNN', task_folder=args.save_path)
-    run(args)
+        logger = get_logger('main', task_folder=args.save_path)
+    else:
+        logger = get_logger('main')
+    run(args, logger)

@@ -56,7 +56,7 @@ def run_agent(args:AgentArg, q, gpu_id, search_k_vs:dict, agent_id):
 
     for key, value in config.items():
         setattr(params, key, value)
-        
+
     params.wandb = True
     
     logger.debug(
@@ -66,9 +66,10 @@ def run_agent(args:AgentArg, q, gpu_id, search_k_vs:dict, agent_id):
         f"run_agent Now params: {params.as_dict()}"
     )
     try:
+        main_logger = get_logger('main', task_folder=params.save_path)
         wandb.agent(
             sweep_id=args.sweep_id,
-            function=lambda: run(params, search_k_vs),
+            function=lambda: run(params, main_logger, search_k_vs),
             project=args.project_name
         )
     except Exception as e:

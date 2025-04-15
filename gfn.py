@@ -5,7 +5,7 @@ from buffer import ReplayBufferDB
 from network import GATGFN
 from utils import get_logger
 
-logger_GFNBase = get_logger('gfn')
+logger = get_logger('GFN')
 
 class GFNBase(object):
     def __init__(self, params):
@@ -139,19 +139,22 @@ class EdgeSelector(GFNBase):
             edge_index: (2, num_edges)
         Returns:
             edge_index: (2, num_edges_selected)'''
+        logger.debug(f"sample HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         state, done = self.init_state(self.rollout_batch_size, self.num_edges) # (rollout_batch_size, num_edges), (rollout_batch_size,)
         state = state.to(edge_index.device)
         done = done.to(edge_index.device)
         reward = self.reward_fn(edge_index.clone(), state) # (rollout_batch_size,)
         traj_s, traj_r, traj_a, traj_d =  [], [], [], []
+
         while not torch.all(done):
             # Sample actions using the policy model
             action_cnt = len(traj_s)
+            # logger.debug(f"sample HIP memory(round{action_cnt}): {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             action = self.model_Pf.action(state, done, edge_index, length_penalty=float(action_cnt/self.max_traj_len)) # (rollout_batch_size,)
             # Update the state and done variables based on the selected actions
             state, done = self.step(state, done, action)
             if action_cnt > self.max_traj_len > 0:
-                logger_GFNBase.debug('Max trajectory length reached')
+                logger.debug('Max trajectory length reached')
                 break
             reward = self.reward_fn(edge_index, state)
             traj_s.append(state.clone())
@@ -163,7 +166,7 @@ class EdgeSelector(GFNBase):
         traj_s.append(state.clone())
         traj_d.append(done.clone())
         traj_r.append(reward.detach().clone())
-        logger_GFNBase.debug(f"sample traj_len: {len(traj_s)}")
+        logger.debug(f"sample traj_len: {len(traj_s)}")
         
         traj_s = torch.stack(traj_s, dim=2) # (rollout_batch_size, num_edges, max_traj_len)
         """
@@ -195,7 +198,8 @@ class EdgeSelector(GFNBase):
             'edge_index': edge_index,
         }
         self.buffer.add_rollout_batch(roll_out_batch)
-        
+        logger.debug(f"sample HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
+
         # Select final edges
         b_idx = torch.argmax(traj_r[torch.arange(self.rollout_batch_size), traj_len - 1], dim=0)
         state = traj_s[b_idx, :, traj_len[b_idx] - 1]
@@ -205,9 +209,10 @@ class EdgeSelector(GFNBase):
         '''
         Train the GFN policy model using the replay buffer
         '''
+        logger.debug(f"train_gfn HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         # Sample a batch of rollout batches from the replay buffer
         batch_size = self.train_gfn_batch_size
-        batch = self.buffer.DB_sample_batch()
+        batch = self.buffer.DB_sample_batch(device=self.model_F.input_embedding.weight.device)
         # s, s_next, d, a, r, r_next, edge_index = batch # Tuple form
         state = batch['s'] # (batch_size, num_edges)
         state_next = batch['s_next'] # (batch_size, num_edges)
@@ -228,6 +233,7 @@ class EdgeSelector(GFNBase):
         )
 
         for i in range(batch_size):
+            # logger.debug(f"train_gfn HIP memory(epoch{i}): {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             edge_index_i = edge_index_ls[i].to(state.device)
 
             pf_logits_i = self.model_Pf(state[i].unsqueeze(0), edge_index_i) # (1, num_edges_i+1)

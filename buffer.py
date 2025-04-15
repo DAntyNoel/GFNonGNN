@@ -3,6 +3,8 @@ import random
 
 from utils import get_logger
 
+logger = get_logger('buffer')
+
 class ReplayBufferDB(object):
     def __init__(self, params):
         self.size = params.buffer_size
@@ -25,26 +27,28 @@ class ReplayBufferDB(object):
         self.pos = (self.pos + 1) % self.size
     
     @staticmethod
-    def get_DB_contents(contents:list):
+    def get_DB_contents(contents:list, device):
         s, s_n, d, a, r, r_n, e = zip(*contents)
+        logger.debug(f"get_DB_contents check buffer device: s {s[0].device}, s_n {s_n[0].device}, d {d[0].device}, a {a[0].device}, r {r[0].device}, r_n {r_n[0].device}, e {e[0].device}")
+        # exit(0)
         return {
-            's': torch.stack(s, dim=0), # (batch_size, num_edges)
-            's_next': torch.stack(s_n, dim=0), # (batch_size, num_edges)
-            'done': torch.stack(d, dim=0), # (batch_size,)
-            'a': torch.stack(a, dim=0), # (batch_size,)
-            'r': torch.stack(r, dim=0), # (batch_size,)
-            'r_next': torch.stack(r_n, dim=0), # (batch_size,)
-            'edge_index': e, # list of (2, num_edges)
+            's': torch.stack(s, dim=0).to(device), # (batch_size, num_edges)
+            's_next': torch.stack(s_n, dim=0).to(device), # (batch_size, num_edges)
+            'done': torch.stack(d, dim=0).to(device), # (batch_size,)
+            'a': torch.stack(a, dim=0).to(device), # (batch_size,)
+            'r': torch.stack(r, dim=0).to(device), # (batch_size,)
+            'r_next': torch.stack(r_n, dim=0).to(device), # (batch_size,)
+            'edge_index': [ee.to(device) for ee in e], # list of (2, num_edges)
         }
 
 
     def add_rollout_batch(self, rollout_batch):
-        traj_s = rollout_batch['state'] # (rollout_batch_size, num_edges, max_traj_len)
-        traj_a = rollout_batch['action'] # (rollout_batch_size, max_traj_len-1)
-        traj_r = rollout_batch['logr'] # (rollout_batch_size, max_traj_len)
-        traj_d = rollout_batch['done'] # (rollout_batch_size, max_traj_len)
-        traj_len = rollout_batch['len'] # (rollout_batch_size,)
-        edge_index = rollout_batch['edge_index'] # (2, num_edges)
+        traj_s = rollout_batch['state'].cpu() # (rollout_batch_size, num_edges, max_traj_len)
+        traj_a = rollout_batch['action'].cpu() # (rollout_batch_size, max_traj_len-1)
+        traj_r = rollout_batch['logr'].cpu() # (rollout_batch_size, max_traj_len)
+        traj_d = rollout_batch['done'].cpu() # (rollout_batch_size, max_traj_len)
+        traj_len = rollout_batch['len'].cpu() # (rollout_batch_size,)
+        edge_index = rollout_batch['edge_index'].cpu() # (2, num_edges)
 
         b = traj_s.size(0)
         for b_idx in range(b):
@@ -61,7 +65,7 @@ class ReplayBufferDB(object):
                 )
                 self.add(transition)
 
-    def DB_sample_batch(self):
+    def DB_sample_batch(self, device):
         '''
         Sample a batch of rollout batches from the replay buffer
         Returns:
@@ -76,5 +80,5 @@ class ReplayBufferDB(object):
         '''
         valid_size = min(len(self.buffer), self.max_sample_batch_size)
         batch = random.sample(self.buffer, valid_size)
-        return self.get_DB_contents(batch)
+        return self.get_DB_contents(batch, device)
    

@@ -29,7 +29,7 @@ class Argument(Tap):
 
     # GNN @ base_models.py
     in_channels: int = 0         # to be set later
-    hidden_channels: int = 32
+    hidden_channels: int = 256
     out_channels: int = 0        # to be set later
     num_layers: int = 3
 
@@ -56,7 +56,7 @@ class Argument(Tap):
     reward_scale: float = 1.0
 
     # ReplayBufferDB @ buffer.py
-    buffer_size: int = 1000
+    buffer_size: int = 2000
     max_sample_batch_size: int = 32
 
     def configure(self):
