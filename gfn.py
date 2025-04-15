@@ -132,6 +132,7 @@ class EdgeSelector(GFNBase):
         self.forward_looking = params.forward_looking
         self.leaf_coef = params.leaf_coef # Origin DB w/o forward looking
 
+    @torch.no_grad()
     def sample(self, edge_index):
         '''
         Sample edges using the policy model
@@ -209,7 +210,10 @@ class EdgeSelector(GFNBase):
         '''
         Train the GFN policy model using the replay buffer
         '''
+        torch.cuda.empty_cache()
+        self.optimizer.zero_grad()
         logger.debug(f"train_gfn HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
+
         # Sample a batch of rollout batches from the replay buffer
         batch_size = self.train_gfn_batch_size
         batch = self.buffer.DB_sample_batch(device=self.model_F.input_embedding.weight.device)
@@ -233,7 +237,6 @@ class EdgeSelector(GFNBase):
         )
 
         for i in range(batch_size):
-            # logger.debug(f"train_gfn HIP memory(epoch{i}): {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             edge_index_i = edge_index_ls[i].to(state.device)
 
             pf_logits_i = self.model_Pf(state[i].unsqueeze(0), edge_index_i) # (1, num_edges_i+1)
@@ -260,9 +263,11 @@ class EdgeSelector(GFNBase):
             losses = (lhs - rhs).pow(2)
             loss = (losses[done].sum() * self.leaf_coef + losses[~done].sum()) / batch_size
         
-        self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+        del state, state_next, done, action, logr, logr_next, edge_index_ls, log_pf, flows, flows_next, log_pb
+        
         return loss.item()
     
     def state_dict(self):
