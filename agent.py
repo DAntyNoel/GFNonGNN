@@ -19,11 +19,11 @@ class AgentArg(Tap):
 
     ## root @ gcn-gfn.py
     lr: list[float] = [0.01, 0.005, 0.002, 0.001]
-    use_gfn: list[bool] = [True, False]
+    gnn_only: list[bool] = [True, False]
 
     # ## GNN @ base_models.py
     # hidden_channels: list[int] = [8, 16, 32]
-    # num_layers: list[int] = [2, 3, 4, 5]
+    # num_layers: list[int] = [2, 4, 8, 16, 32]
 
     # ## GATGFN @ network.py
     # # gfn_hidden_dim: list[int] = [32, 64, 128]
@@ -44,6 +44,7 @@ class AgentArg(Tap):
     # max_sample_batch_size: list[int] = [16, 32, 64]
 
 def run_agent(args:AgentArg, q, gpu_id, search_k_vs:dict, agent_id):
+    os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
     params = Argument().parse_args()
     config = {}
     for key, value in args.as_dict().items():
@@ -52,6 +53,11 @@ def run_agent(args:AgentArg, q, gpu_id, search_k_vs:dict, agent_id):
     for key, value in params.as_dict().items():
         if key not in search_k_vs.keys():
             config.update({key: value})
+
+    for key, value in config.items():
+        setattr(params, key, value)
+        
+    params.wandb = True
     
     logger.debug(
         f"run_agent GPU {gpu_id} is allocated.\n"
@@ -69,8 +75,9 @@ def run_agent(args:AgentArg, q, gpu_id, search_k_vs:dict, agent_id):
         logger.error(f"Error occurred: {e}. \nThis agent config: {config.as_dict()}")
         time.sleep(10)
     finally:
-        q.put(gpu_id)
-        logger.info(f"Agent {gpu_id} finished. GPU {gpu_id} is released.")
+        if q is not None:
+            q.put(gpu_id)
+            logger.info(f"Agent {gpu_id} finished. GPU {gpu_id} is released.")
 
 if __name__ == '__main__':
     logger.info(f"Start to run the agent.")
@@ -112,17 +119,19 @@ if __name__ == '__main__':
 
     entity = os.environ.get("WANDB_ENTITY")
 
-    q = Queue()
-    for gpu_id in list_gpu_id:
-        q.put(gpu_id)
+    run_agent(args, None, '0', search_k_vs, 0)
 
-    while True:
-        sweep = wandb.Api().sweep(f"{entity}/{args.project_name}/{sweep_id}")
-        agent_id = len(sweep.runs)
-        if agent_id < total_tasks:
-            gpu_id = q.get()
-            p = Process(target=run_agent, args=(args, q, gpu_id, search_k_vs, agent_id+1))
-            p.start()
-        else:
-            print('Sweep is done, do not need more agent')
-            break
+    # q = Queue()
+    # for gpu_id in list_gpu_id:
+    #     q.put(gpu_id)
+
+    # while True:
+    #     sweep = wandb.Api().sweep(f"{entity}/{args.project_name}/{sweep_id}")
+    #     agent_id = len(sweep.runs)
+    #     if agent_id < total_tasks:
+    #         gpu_id = q.get()
+    #         p = Process(target=run_agent, args=(args, q, gpu_id, search_k_vs, agent_id+1))
+    #         p.start()
+    #     else:
+    #         print('Sweep is done, do not need more agent')
+    #         break

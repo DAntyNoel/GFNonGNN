@@ -18,8 +18,8 @@ class Argument(Tap):
     epochs: int = 200
     save_interval: int = 0 # -1 not save; 0 only save last; >0 save interval
     eval_interval: int = 5
-    use_gfn: bool = True
-    patience: int = 20 # Early stopping patience
+    gnn_only: bool = False
+    patience: int = -1 # Early stopping patience
 
     save_path: str = 'test'
     best_gnn_model_path: str = ''    # to be set later
@@ -31,10 +31,10 @@ class Argument(Tap):
     in_channels: int = 0         # to be set later
     hidden_channels: int = 32
     out_channels: int = 0        # to be set later
-    num_layers: int = 4
+    num_layers: int = 3
 
     # GATGFN @ network.py
-    gfn_hidden_dim: int = 128
+    gfn_hidden_dim: int = 64
     gfn_num_layers: int = 2
     gfn_heads: int = 8
     gfn_dropout: float = 0.4

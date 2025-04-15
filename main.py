@@ -17,6 +17,8 @@ from utils import get_logger, Argument
 from network import get_degree
 from gfn import EdgeSelector
 
+logger = get_logger('GNN')
+
 def get_dataset(params:Argument):
     path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'Planetoid')
     dataset = Planetoid(path, params.dataset, transform=T.NormalizeFeatures())
@@ -55,7 +57,7 @@ def get_models(params:Argument, data):
     params.best_gfn_model_path = best_gfn_model_path
     params.max_degree = get_degree(data.edge_index.cpu(), data.num_nodes).max().item()
     params.num_edges = data.edge_index.size(1)
-    if params.use_gfn:
+    if not params.gnn_only:
         GFN = EdgeSelector(params, params.device)
         GFN.set_evaluate_tools(
             model_gnn, F.cross_entropy, data.x, data.y, data.train_mask
@@ -107,7 +109,7 @@ def run(args:Argument, search_k_vs:dict={}):
                 logger.debug(f"Key {key} is in search space. Skip wandb init config.")
                 param_dict.pop(key)
 
-        wandb.init(
+        run = wandb.init(
             project=params.project_name,
             name=params.task_name,
             config=param_dict,
@@ -119,12 +121,14 @@ def run(args:Argument, search_k_vs:dict={}):
             for key in search_k_vs.keys():
                 logger.debug(f"Key {key} is in search space. Set from wandb config {wandb.config[key]}.")
                 setattr(params, key, wandb.config[key])
-                
+
         wandb.define_metric('step_GNN', step_metric='step_GNN', hidden=True)
         wandb.define_metric('step_GFN', step_metric='step_GFN', hidden=True)
         wandb.define_metric('loss/GNN', step_metric='step_GNN')
         wandb.define_metric('loss/GFN', step_metric='step_GFN')
         wandb.define_metric('acc/*', step_metric='step_GNN')
+        logger.info(f"Wandb config: {wandb.config}")
+        logger.info(f"Wandb URL: {run.url}")
 
     logger.info(f'Device: {params.device}')
     best_val_acc = test_acc = 0
@@ -145,7 +149,7 @@ def run(args:Argument, search_k_vs:dict={}):
         if params.wandb:
             wandb.log({'loss/GNN': float(loss), 'step_GNN': epoch})
 
-        if params.use_gfn and epoch % params.gfn_train_interval == 0:
+        if not params.gnn_only and epoch % params.gfn_train_interval == 0:
             logger.info(f'GFN train at epoch {epoch}!')
             GFN.set_evaluate_tools(
                 params.best_gnn_model_path, F.cross_entropy, data.x, data.y, data.train_mask
@@ -219,8 +223,8 @@ def run(args:Argument, search_k_vs:dict={}):
     if params.save_interval >= 0:
         save_models(model_gnn, GFN, params)
     if params.wandb:
-        wandb.finish()
         wandb.run.summary["best_val_acc"] = best_val_acc
+        wandb.finish()
 
 
 if __name__ == '__main__':
@@ -237,6 +241,4 @@ if __name__ == '__main__':
         os.makedirs(save_path, exist_ok=True)
         args.save_path = save_path
         logger = get_logger('GNN', task_folder=args.save_path)
-    else:
-        logger = get_logger('GNN')
     run(args)

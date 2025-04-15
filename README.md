@@ -55,9 +55,10 @@ $$
 ### 项目结构
 
 - `base_models.py`：定义了基础的 GNN 模型。
+- `network.py`：GFN内核实现
 - `gfn.py`：实现了 GFN 的核心逻辑，包括 `EdgeSelector` 类。
 - `buffer.py`：定义了用于存储和采样数据的回放缓冲区。
-- `utils.py`：提供了日志记录、参数解析等工具函数。
+- `utils.py`：提供了日志记录、参数解析等工具函数。Tap库内置argparse模块，可以使用类似于`python main.py -n test0415`的方式覆盖`Argument` 类的参数，非常方便。
 
 ---
 
