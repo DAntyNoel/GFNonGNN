@@ -32,12 +32,12 @@ class Argument(Tap):
     in_channels: int = 0         # to be set later
     hidden_channels: int = 256
     out_channels: int = 0        # to be set later
-    num_layers: int = 4
+    num_layers: int = 8
 
     # GATGFN @ network.py
     gfn_hidden_dim: int = 128
     gfn_num_layers: int = 2
-    gfn_heads: int = 16
+    gfn_heads: int = 8
     gfn_dropout: float = 0.2
     max_degree: int = 100        # to be set later
     
