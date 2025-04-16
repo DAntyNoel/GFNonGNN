@@ -242,6 +242,7 @@ if __name__ == '__main__':
         os.makedirs(save_path, exist_ok=True)
         args.save_path = save_path
         logger = get_logger('main', task_folder=args.save_path)
+        logger.info(f"Task name: {args.task_name}")
     else:
         logger = get_logger('main')
     run(args, logger)

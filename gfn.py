@@ -133,78 +133,90 @@ class EdgeSelector(GFNBase):
         self.leaf_coef = params.leaf_coef # Origin DB w/o forward looking
 
     @torch.no_grad()
-    def sample(self, edge_index):
+    def sample(self, edge_index, repeats=1):
         '''
         Sample edges using the policy model
         Args:
             edge_index: (2, num_edges)
+            repeats: number of samples needed
         Returns:
-            edge_index: (2, num_edges_selected)'''
+            edge_index: (repeats, 2, num_edges_selected)'''
         logger.debug(f"sample HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
-        state, done = self.init_state(self.rollout_batch_size, self.num_edges) # (rollout_batch_size, num_edges), (rollout_batch_size,)
-        state = state.to(edge_index.device)
-        done = done.to(edge_index.device)
-        reward = self.reward_fn(edge_index.clone(), state) # (rollout_batch_size,)
-        traj_s, traj_r, traj_a, traj_d =  [], [], [], []
+        states, log_rs = [], []
+        for _ in range(max(1, (repeats - 1)//self.rollout_batch_size + 1)):
+            state, done = self.init_state(self.rollout_batch_size, self.num_edges) # (rollout_batch_size, num_edges), (rollout_batch_size,)
+            state = state.to(edge_index.device)
+            done = done.to(edge_index.device)
+            reward = self.reward_fn(edge_index.clone(), state) # (rollout_batch_size,)
+            traj_s, traj_r, traj_a, traj_d =  [], [], [], []
 
-        while not torch.all(done):
-            # Sample actions using the policy model
-            action_cnt = len(traj_s)
-            # logger.debug(f"sample HIP memory(round{action_cnt}): {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
-            action = self.model_Pf.action(state, done, edge_index, length_penalty=float(action_cnt/self.max_traj_len)) # (rollout_batch_size,)
-            # Update the state and done variables based on the selected actions
-            state, done = self.step(state, done, action)
-            if action_cnt > self.max_traj_len > 0:
-                logger.debug('Max trajectory length reached')
-                break
-            reward = self.reward_fn(edge_index, state)
+            while not torch.all(done):
+                # Sample actions using the policy model
+                action_cnt = len(traj_s)
+                # logger.debug(f"sample HIP memory(round{action_cnt}): {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
+                action = self.model_Pf.action(state, done, edge_index, length_penalty=float(action_cnt/self.max_traj_len)) # (rollout_batch_size,)
+                # Update the state and done variables based on the selected actions
+                state, done = self.step(state, done, action)
+                if action_cnt > self.max_traj_len > 0:
+                    logger.debug('Max trajectory length reached')
+                    break
+                reward = self.reward_fn(edge_index, state)
+                traj_s.append(state.clone())
+                traj_r.append(reward.clone())
+                traj_a.append(action)
+                traj_d.append(done.clone())
+            
+            # save last state
             traj_s.append(state.clone())
-            traj_r.append(reward.clone())
-            traj_a.append(action)
             traj_d.append(done.clone())
-        
-        # save last state
-        traj_s.append(state.clone())
-        traj_d.append(done.clone())
-        traj_r.append(reward.detach().clone())
-        logger.debug(f"sample traj_len: {len(traj_s)}")
-        
-        traj_s = torch.stack(traj_s, dim=2) # (rollout_batch_size, num_edges, max_traj_len)
-        """
-        traj_s is the dense bool tensor form of the union of traj_a
-        """
-        traj_a = torch.stack(traj_a, dim=1) # (rollout_batch_size, max_traj_len-1)
-        """
-        traj_a is tensor like 
-        [ 4, 30, 86, 95, 96, 29, -1, -1],
-        [47, 60, 41, 11, 55, 64, 80, -1],
-        [26, 38, 13,  5,  9, -1, -1, -1]
-        """
-        traj_d = torch.stack(traj_d, dim=1) # (rollout_batch_size, max_traj_len)
-        """
-        traj_d is tensor like 
-        [ F,  F,  F,  F,  F,  F,  F,  T,  T],
-        [ F,  F,  F,  F,  F,  F,  F,  F,  T],
-        [ F,  F,  F,  F,  F,  F,  T,  T,  T]
-        """
-        traj_r = torch.stack(traj_r, dim=1) # (rollout_batch_size, max_traj_len)
-        traj_len = 1 + torch.sum(~traj_d, dim=1) # (rollout_batch_size,)
+            traj_r.append(reward.detach().clone())
+            logger.debug(f"sample traj_len: {len(traj_s)}")
+            
+            traj_s = torch.stack(traj_s, dim=2) # (rollout_batch_size, num_edges, max_traj_len)
+            """
+            traj_s is the dense bool tensor form of the union of traj_a
+            """
+            traj_a = torch.stack(traj_a, dim=1) # (rollout_batch_size, max_traj_len-1)
+            """
+            traj_a is tensor like 
+            [ 4, 30, 86, 95, 96, 29, -1, -1],
+            [47, 60, 41, 11, 55, 64, 80, -1],
+            [26, 38, 13,  5,  9, -1, -1, -1]
+            """
+            traj_d = torch.stack(traj_d, dim=1) # (rollout_batch_size, max_traj_len)
+            """
+            traj_d is tensor like 
+            [ F,  F,  F,  F,  F,  F,  F,  T,  T],
+            [ F,  F,  F,  F,  F,  F,  F,  F,  T],
+            [ F,  F,  F,  F,  F,  F,  T,  T,  T]
+            """
+            traj_r = torch.stack(traj_r, dim=1) # (rollout_batch_size, max_traj_len)
+            traj_len = 1 + torch.sum(~traj_d, dim=1) # (rollout_batch_size,)
 
-        roll_out_batch = {
-            'state': traj_s,
-            'action': traj_a,
-            'logr': traj_r,
-            'done': traj_d,
-            'len': traj_len,
-            'edge_index': edge_index,
-        }
-        self.buffer.add_rollout_batch(roll_out_batch)
-        logger.debug(f"sample HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
+            roll_out_batch = {
+                'state': traj_s,
+                'action': traj_a,
+                'logr': traj_r,
+                'done': traj_d,
+                'len': traj_len,
+                'edge_index': edge_index,
+            }
+            self.buffer.add_rollout_batch(roll_out_batch)
+            logger.debug(f"sample HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
 
+            log_rs.append(traj_r[..., traj_len - 1]) # (rollout_batch_size)
+            states.append(traj_s[..., traj_len - 1]) # (rollout_batch_size, num_edges)
+
+        log_rs = torch.cat(log_rs, dim=0) # (>=repeats)
+        states = torch.cat(states, dim=0) # (>=repeats, num_edges)
         # Select final edges
-        b_idx = torch.argmax(traj_r[torch.arange(self.rollout_batch_size), traj_len - 1], dim=0)
-        state = traj_s[b_idx, :, traj_len[b_idx] - 1]
-        return edge_index[:, state==0]
+        values, indices = log_rs.topk(repeats, dim=0, largest=True, sorted=False)
+        states_fin = states[indices] # (repeats, num_edges)
+        edge_index_fin = []
+        for r in range(repeats):
+            states = states_fin[r]
+            edge_index_fin.append(edge_index[:, states==0])
+        return edge_index_fin
 
     def train_gfn(self):
         '''

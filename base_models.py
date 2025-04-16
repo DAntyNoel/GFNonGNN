@@ -28,11 +28,11 @@ class GCN(torch.nn.Module):
                                       normalize=not self.use_gdc))
 
     def forward(self, x, edge_index, GFN:EdgeSelector=None):
-        for conv in self.convs:
+        if GFN is not None:
+            edge_indexs = GFN.sample(edge_index, self.num_layers - 1)
+        for i, conv in enumerate(self.convs):
             if GFN is not None:
-                edge_index_i = GFN.sample(edge_index)
-                logger.debug(f'GFN sample new edge_index.shape: {edge_index_i.shape}')
-                x = conv(x, edge_index_i).relu()
+                x = conv(x, edge_indexs[i]).relu()
             else:
                 x = conv(x, edge_index).relu()
             x = F.dropout(x, p=0.5, training=self.training)
@@ -48,12 +48,13 @@ class GAT(torch.nn.Module):
         self.hidden_channels = params.hidden_channels
         self.out_channels = params.out_channels
         self.heads = params.heads
+        self.num_layers = params.num_layers
 
         self.convs = nn.ModuleList()
         self.convs.append(GATConv(self.in_channels, self.hidden_channels,
                              heads=self.heads, dropout=0.6))
         # TODO
-        for _ in range(params.num_layers - 2):
+        for _ in range(self.num_layers - 2):
             self.convs.append(GATConv(self.hidden_channels * self.heads, self.hidden_channels,
                                       heads=self.heads, dropout=0.6))
         # On the Pubmed dataset, use `heads` output heads in `conv2`.
@@ -61,11 +62,11 @@ class GAT(torch.nn.Module):
                              concat=False, dropout=0.6)
 
     def forward(self, x, edge_index, GFN:EdgeSelector=None):
-        for conv in self.convs:
+        if GFN is not None:
+            edge_indexs = GFN.sample(edge_index, self.num_layers - 1)
+        for i, conv in enumerate(self.convs):
             if GFN is not None:
-                edge_index_i = GFN.sample(edge_index)
-                logger.debug(f'GFN sample new edge_index.shape: {edge_index_i.shape}')
-                x = conv(x, edge_index_i)
+                x = conv(x, edge_indexs[i])
                 x = F.leaky_relu(x, negative_slope=0.2)
             else:
                 x = conv(x, edge_index)
