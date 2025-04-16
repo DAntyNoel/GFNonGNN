@@ -29,8 +29,6 @@ class ReplayBufferDB(object):
     @staticmethod
     def get_DB_contents(contents:list, device):
         s, s_n, d, a, r, r_n, e = zip(*contents)
-        logger.debug(f"get_DB_contents check buffer device: s {s[0].device}, s_n {s_n[0].device}, d {d[0].device}, a {a[0].device}, r {r[0].device}, r_n {r_n[0].device}, e {e[0].device}")
-        # exit(0)
         return {
             's': torch.stack(s, dim=0).to(device), # (batch_size, num_edges)
             's_next': torch.stack(s_n, dim=0).to(device), # (batch_size, num_edges)

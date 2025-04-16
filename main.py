@@ -77,10 +77,8 @@ def save_models(gnn_model, GFN:EdgeSelector, params:Argument, epoch=-1):
         torch.save(GFN.state_dict(), gfn_model_path)
     logger.info(f'Saved models at {params.save_path}!')
 
-def get_next_run_name(project_name, base_name):
-    api = wandb.Api()
-    runs = api.runs(f"{project_name}")
-    existing_names = [run.name for run in runs]
+def get_next_run_name(save_path, base_name):
+    existing_names = os.listdir(save_path)
     existing_indices = []
     for name in existing_names:
         if name.startswith(base_name):
@@ -127,6 +125,8 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
         wandb.define_metric('acc/*', step_metric='step_GNN')
         logger.info(f"Wandb config: {wandb.config}")
         logger.info(f"Wandb URL: {run.url}")
+    else:
+        logger.info(f"Run without wandb. Save path: {params.save_path}")
 
     logger.info(f'Device: {params.device}')
     best_val_acc = test_acc = 0
@@ -232,7 +232,7 @@ if __name__ == '__main__':
     args = Argument().parse_args()
     if args.task_name != '':
         # setup task env
-        args.task_name = get_next_run_name(args.project_name, args.task_name)
+        args.task_name = get_next_run_name(args.save_path, args.task_name)
         save_path = osp.join(args.save_path, args.task_name)
         if os.path.exists(save_path):
             if args.overwrite:
