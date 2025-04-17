@@ -58,7 +58,6 @@ class Argument(Tap):
 
     # ReplayBufferDB @ buffer.py
     buffer_size: int = 2000
-    max_sample_batch_size: int = 32
 
     def configure(self):
         self.add_argument('-N', '--epochs')

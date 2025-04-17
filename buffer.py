@@ -8,7 +8,6 @@ logger = get_logger('buffer')
 class ReplayBufferDB(object):
     def __init__(self, params):
         self.size = params.buffer_size
-        self.max_sample_batch_size = params.max_sample_batch_size
 
         self.buffer = []
         self.pos = 0
@@ -63,7 +62,7 @@ class ReplayBufferDB(object):
                 )
                 self.add(transition)
 
-    def DB_sample_batch(self, device):
+    def DB_sample_batch(self, valid_size, device):
         '''
         Sample a batch of rollout batches from the replay buffer
         Returns:
@@ -76,7 +75,6 @@ class ReplayBufferDB(object):
             - r_next: (batch_size,)
             - edge_index: list of (2, num_edges)
         '''
-        valid_size = min(len(self.buffer), self.max_sample_batch_size)
         batch = random.sample(self.buffer, valid_size)
         return self.get_DB_contents(batch, device)
    

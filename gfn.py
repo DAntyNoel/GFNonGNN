@@ -228,8 +228,8 @@ class EdgeSelector(GFNBase):
         logger.debug(f"train_gfn HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
 
         # Sample a batch of rollout batches from the replay buffer
-        batch_size = self.train_gfn_batch_size
-        batch = self.buffer.DB_sample_batch(device=self.model_F.input_embedding.weight.device)
+        batch_size = min(len(self.buffer), self.train_gfn_batch_size)
+        batch = self.buffer.DB_sample_batch(valid_size=batch_size, device=self.model_F.input_embedding.weight.device)
         # s, s_next, d, a, r, r_next, edge_index = batch # Tuple form
         state = batch['s'] # (batch_size, num_edges)
         state_next = batch['s_next'] # (batch_size, num_edges)
