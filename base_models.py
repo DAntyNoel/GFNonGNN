@@ -7,7 +7,7 @@ from torch_geometric.nn import GCNConv, GATConv
 from gfn import EdgeSelector
 from utils import get_logger, Argument
 
-logger = get_logger('bases')
+logger = get_logger('base_models')
 
 class GCN(torch.nn.Module):
     def __init__(self, params):

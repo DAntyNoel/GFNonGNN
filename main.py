@@ -132,9 +132,8 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
     best_val_acc = test_acc = 0
     gfn_train_cnt = bad_cnt = 0
     for epoch in range(1, params.epochs + 1):
-        logger.debug(f"run HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         start = time.time()
-        # train
+        # train GNN
         model_gnn.train()
         optimizer.zero_grad()
         out = model_gnn(data.x, data.edge_index, GFN)
@@ -148,14 +147,16 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
         if params.wandb:
             wandb.log({'loss/GNN': float(loss), 'step_GNN': epoch})
 
+        # train GFN
         if not params.gnn_only and epoch % params.gfn_train_interval == 0:
             logger.info(f'GFN train at epoch {epoch}!')
-            logger.debug(f"run HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
+            logger.debug(f"run GFN train start HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             GFN.set_evaluate_tools(
                 params.best_gnn_model_path, F.cross_entropy, data.x, data.y, data.train_mask
             )
             loss_gfn_ls = []
             time_gfn_ls = []
+            logger.debug(f"run GFN set_evaluate_tools HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             
             for train_step in range(1, params.gfn_train_steps+1):
                 start_time = time.time()
@@ -241,12 +242,16 @@ if __name__ == '__main__':
                 raise ValueError(f'Task folder {save_path} already exists. Use --overwrite to overwrite.')
         os.makedirs(save_path, exist_ok=True)
         args.save_path = save_path
-        logger = get_logger('main', task_folder=args.save_path)
-        logger.info(f"Task name: {args.task_name}")
+        logger_main = get_logger('main', task_folder=args.save_path)
+        logger_main.info(f"Task name: {args.task_name}")
     else:
-        logger = get_logger('main')
+        logger_main = get_logger('main')
     try:
-        run(args, logger)
+        run(args, logger_main)
     except Exception as e:
-        logger.error(f"Unexpected error occurred. Check debug logs for more details.")
-        logger.error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        logger_main.error(f"Unexpected error occurred. Check debug logs for more details.")
+        logger_main.error(f"Error: {e}")
+        if args.wandb:
+            wandb.finish()

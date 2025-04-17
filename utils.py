@@ -53,6 +53,7 @@ class Argument(Tap):
     leaf_coef: float = 0.1 # Origin DB w/o forward looking
 
     # GFNBase @ gfn.py
+    evaluate_device: str = 'cuda' # TODO: 'cpu' cannot run. 
     check_step_action: bool = False
     reward_scale: float = 1.0
 
@@ -72,7 +73,7 @@ def get_logger(name, task_folder=None, debug_folder='logs'):
     logger = logging.getLogger(osp.basename(name))
     logger.setLevel(logging.DEBUG)
     log_format_cmd = logging.Formatter('%(message)s')
-    log_format_file = logging.Formatter('%(asctime)s %(name)-8s %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    log_format_file = logging.Formatter('%(asctime)s  %(levelname)-5s %(name)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)  
@@ -81,8 +82,6 @@ def get_logger(name, task_folder=None, debug_folder='logs'):
 
     if debug_folder:
         os.makedirs(debug_folder, exist_ok=True)
-        with open(osp.join(debug_folder, 'debug.log'), 'w') as f:
-            f.write('')
         file_handler = logging.FileHandler(osp.join(debug_folder, f'{datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")}.log'))
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(log_format_file)

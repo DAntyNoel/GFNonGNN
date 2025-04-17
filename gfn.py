@@ -10,6 +10,7 @@ logger = get_logger('GFN')
 class GFNBase(object):
     def __init__(self, params):
         self._params = params
+        self.device = params.evaluate_device
         self.check_step_action = params.check_step_action
         self.reward_scale = params.reward_scale
         self.gnn_model = None
@@ -22,35 +23,36 @@ class GFNBase(object):
     def set_evaluate_tools(self, gnn_model=None, criterion=None, x=None, y=None, mask=None):
         if gnn_model is not None:
             if isinstance(gnn_model, str):
-                self.gnn_model.load_state_dict(torch.load(gnn_model, map_location=self.x.device))
+                self.gnn_model.load_state_dict(torch.load(gnn_model, map_location=self.device))
             else:
-                self.gnn_model = gnn_model
+                self.gnn_model = gnn_model.to(self.device)
         if criterion is not None:
             self.criterion = criterion
         if x is not None:
-            self.x = x
+            self.x = x.to(self.device)
         if y is not None:
-            self.y = y
+            self.y = y.to(self.device)
         if mask is not None:
-            self.mask = mask
+            self.mask = mask.to(self.device)
             
     def reward_fn(self, edge_index, state):
+        data_device = state.device
         b, e = state.size()
-        x = self.x.to(edge_index.device)
-        y = self.y.to(edge_index.device)
-        mask = self.mask.to(edge_index.device)
+        x = self.x
+        y = self.y
+        mask = self.mask
         reward_ls = []
         # TODO 
         for i in range(b):
             state_i = state[i]
-            edge_index_i = edge_index[:, state_i==0]
+            edge_index_i = edge_index[:, state_i==0].to(self.device)
             loss = self.criterion(
                 self.gnn_model(x, edge_index_i)[mask], y[mask]
             )
             reward = torch.exp(-loss / self.reward_scale)
             reward_ls.append(reward)
         
-        return torch.stack(reward_ls, dim=0) # (batch_size,)
+        return torch.stack(reward_ls, dim=0).to(data_device) # (batch_size,)
     
     def init_state(self, batch_size, num_edges):
         # Initialize the state and done variables
@@ -225,7 +227,7 @@ class EdgeSelector(GFNBase):
         '''
         torch.cuda.empty_cache()
         self.optimizer.zero_grad()
-        logger.debug(f"train_gfn HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
+        logger.debug(f"train_gfn start HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
 
         # Sample a batch of rollout batches from the replay buffer
         batch_size = min(len(self.buffer), self.train_gfn_batch_size)
@@ -250,6 +252,7 @@ class EdgeSelector(GFNBase):
         )
 
         for i in range(batch_size):
+            logger.debug(f"train_gfn {i}/{batch_size} HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             edge_index_i = edge_index_ls[i].to(state.device)
 
             pf_logits_i = self.model_Pf(state[i].unsqueeze(0), edge_index_i) # (1, num_edges_i+1)
@@ -278,9 +281,9 @@ class EdgeSelector(GFNBase):
         
         loss.backward()
         self.optimizer.step()
-
+        logger.debug(f"train_gfn finnal HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         del state, state_next, done, action, logr, logr_next, edge_index_ls, log_pf, flows, flows_next, log_pb
-        
+        logger.debug(f"train_gfn del HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         return loss.item()
     
     def state_dict(self):
