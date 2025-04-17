@@ -5,6 +5,8 @@ import os.path as osp
 from tap import Tap # typed-argument-parser
 
 class Argument(Tap):
+    is_debug: bool = False
+
     project_name: str = 'GFNonGNN'
     dataset: str = 'CiteSeer'
     device: str = 'cuda'
@@ -66,6 +68,7 @@ class Argument(Tap):
         self.add_argument('-w', '--wandb')
         self.add_argument('-n', '--task_name')
         self.add_argument('-p', '--project_name')
+        self.add_argument('-d', '--is_debug')
 
 
 def get_logger(name, task_folder=None, debug_folder='logs'):

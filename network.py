@@ -27,7 +27,7 @@ logger_GATGFN = get_logger('network')
 class GATGFN(torch.nn.Module):
     def __init__(self, params, graph_level_output=0):
         super().__init__()
-
+        self._params = params
         self.hidden_dim = params.gfn_hidden_dim
         self.num_layers = params.gfn_num_layers
         self.heads = params.gfn_heads

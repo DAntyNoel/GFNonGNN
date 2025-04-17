@@ -204,8 +204,7 @@ class EdgeSelector(GFNBase):
                 'edge_index': edge_index,
             }
             self.buffer.add_rollout_batch(roll_out_batch)
-            logger.debug(f"sample HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
-
+            
             b_arange = torch.arange(self.rollout_batch_size, device=edge_index.device)
             log_rs.append(traj_r[b_arange, traj_len[b_arange] - 1]) # (rollout_batch_size)
             states.append(traj_s[b_arange, :, traj_len[b_arange] - 1]) # (rollout_batch_size, num_edges)

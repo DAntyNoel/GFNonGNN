@@ -12,6 +12,7 @@ logger = get_logger('base_models')
 class GCN(torch.nn.Module):
     def __init__(self, params):
         super().__init__()
+        self._params = params
         self.in_channels = params.in_channels
         self.hidden_channels = params.hidden_channels
         self.out_channels = params.out_channels
@@ -32,6 +33,8 @@ class GCN(torch.nn.Module):
             edge_indexs = GFN.sample(edge_index, self.num_layers - 1)
         for i, conv in enumerate(self.convs):
             if GFN is not None:
+                if self._params.is_debug:
+                    assert torch.all(edge_indexs[i] == edge_index)
                 x = conv(x, edge_indexs[i]).relu()
             else:
                 x = conv(x, edge_index).relu()

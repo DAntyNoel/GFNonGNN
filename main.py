@@ -57,8 +57,11 @@ def get_models(params:Argument, data):
     params.num_edges = data.edge_index.size(1)
     if not params.gnn_only:
         GFN = EdgeSelector(params, params.device)
+        gnn_model_frozen = GCN(params)
+        gnn_model_frozen.load_state_dict(torch.load(best_gnn_model_path))
+        gnn_model_frozen.to(params.device)
         GFN.set_evaluate_tools(
-            model_gnn, F.cross_entropy, data.x, data.y, data.train_mask
+            gnn_model_frozen, F.cross_entropy, data.x, data.y, data.train_mask
         )
     else:
         GFN = None
