@@ -245,4 +245,8 @@ if __name__ == '__main__':
         logger.info(f"Task name: {args.task_name}")
     else:
         logger = get_logger('main')
-    run(args, logger)
+    try:
+        run(args, logger)
+    except Exception as e:
+        logger.error(f"Unexpected error occurred. Check debug logs for more details.")
+        logger.error(f"Error: {e}")
