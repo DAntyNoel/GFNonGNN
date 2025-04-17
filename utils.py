@@ -26,7 +26,7 @@ class Argument(Tap):
     best_gnn_model_path: str = ''    # to be set later
     best_gfn_model_path: str = ''    # to be set later
     gfn_train_interval: int = 20
-    gfn_train_steps: int = 40
+    gfn_train_steps: int = 20
 
     # GNN @ base_models.py
     in_channels: int = 0         # to be set later
@@ -46,7 +46,7 @@ class Argument(Tap):
     rollout_batch_size: int = 8
     num_edges: int = 0           # to be set later
     max_traj_len: int = 64
-    train_gfn_batch_size: int = 64
+    train_gfn_batch_size: int = 32
     gfn_lr: float = 0.001
     gfn_weight_decay: float = 0.00001
     forward_looking: bool = True

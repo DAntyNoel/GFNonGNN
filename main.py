@@ -75,7 +75,7 @@ def save_models(gnn_model, GFN:EdgeSelector, params:Argument, epoch=-1):
     torch.save(gnn_model.state_dict(), gnn_model_path)
     if GFN is not None:
         torch.save(GFN.state_dict(), gfn_model_path)
-    logger.info(f'Saved models at {params.save_path}!')
+    logger_main.info(f'Saved models at {params.save_path}!')
 
 def get_next_run_name(save_path, base_name):
     existing_names = os.listdir(save_path)
