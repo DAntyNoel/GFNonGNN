@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions import Bernoulli
 
 from torch_geometric.nn import GATConv
 
@@ -104,11 +105,12 @@ class GATGFN(torch.nn.Module):
 
         if self.graph_level_output > 0:
             flows = self.read_out_flow(x_ls)
+            # flows = F.relu(flows)
             return pf_logits, flows
         
         return pf_logits 
 
-    def action(self, state, done, edge_index, length_penalty=0.):
+    def action(self, state, done, edge_index, length_penalty=0., return_logits=False):
         '''
         Sample actions using the policy model. If length_penalty -> 1, the action will tend to sample done.
         Args:
@@ -117,20 +119,55 @@ class GATGFN(torch.nn.Module):
             edge_index: (2, num_edges)
             length_penalty: float
         Returns:
-            action: (batch_size,)
+            action: bool, (batch_size, num_edges+1)
         '''
         self.eval()
         b, e = state.size()
         with torch.no_grad():
-            action = torch.full((b,), -1, dtype=torch.long, device=state.device)
+            action = torch.full((b, e+1), False, dtype=torch.bool, device=state.device)
             pf_logits = self(state, edge_index)
             if self.graph_level_output > 0:
                 pf_logits = pf_logits[0]
             pf_logits = pf_logits.reshape(b, -1)
             state = torch.cat([state, done.unsqueeze(-1)], dim=1) # (batch_size, num_edges+1)
             pf_logits[state == 1] = -np.inf
-            pf_undone = pf_logits[~done].softmax(dim=1)
+            pf_undone = pf_logits[~done].softmax(dim=1) # (batch_size, num_edges+1)
             pf_undone[:, -1] = pf_undone[:, -1] + length_penalty
             pf_undone[:, :-1] = pf_undone[:, :-1] * (1. - length_penalty)
-            action[~done] = torch.multinomial(pf_undone, num_samples=1).squeeze(-1)
+            sampled_indices = torch.multinomial(pf_undone, num_samples=1) # (batch_size, 1)
+            action[~done] = action[~done].scatter_(dim=1, index=sampled_indices, value=1.0)
+            if return_logits:
+                logits = torch.zeros_like(pf_logits)
+                logits[~done] = pf_undone
+                return action, logits
             return action
+
+    def mul_action(self, state, done, edge_index, length_penalty=0.):
+        '''
+        Sample actions using the policy model. If length_penalty -> 1, the action will tend to sample done.
+        Args:
+            state: (batch_size, num_edges)
+            done: (batch_size,)
+            edge_index: (2, num_edges)
+            length_penalty: float
+        Returns:
+            action: bool, (batch_size, num_edges+1)
+        '''
+        self.eval()
+        b, e = state.size()
+        with torch.no_grad():
+            action = torch.full((b, e+1), False, dtype=torch.bool, device=state.device)
+            pf_logits = self(state, edge_index)
+            if self.graph_level_output > 0:
+                pf_logits = pf_logits[0]
+            pf_logits = pf_logits.reshape(b, -1) # (batch_size, num_edges+1)
+
+        min_values, _ = torch.min(pf_logits, dim=1, keepdim=True)
+        max_values, _ = torch.max(pf_logits, dim=1, keepdim=True)
+        normalized_logits = (pf_logits - min_values) / (max_values - min_values)
+        state = torch.cat([state, done.unsqueeze(-1)], dim=1) # (batch_size, num_edges+1)
+        normalized_logits[state == 1] = 0
+        normalized_logits[:, e] = normalized_logits[:, e] * (1 - length_penalty) + length_penalty
+        action = Bernoulli(normalized_logits).sample() # (batch_size, num_edges+1)
+        action = action.bool()
+        return action

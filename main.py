@@ -145,7 +145,7 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
         optimizer.step()
         logger.info(
             f'Epoch: {epoch:04d}, \n'
-            f'Loss: {float(loss):.4f}'
+            f'Loss: {float(loss.detach()):.4f}'
         )
         if params.wandb:
             wandb.log({'loss/GNN': float(loss), 'step_GNN': epoch})
@@ -242,10 +242,10 @@ if __name__ == '__main__':
                 raise ValueError(f'Task folder {save_path} already exists. Use --overwrite to overwrite.')
         os.makedirs(save_path, exist_ok=True)
         args.save_path = save_path
-        logger_main = get_logger('main', task_folder=args.save_path)
+        logger_main = get_logger('main', main_logger_level=args.log_level.upper(), task_folder=args.save_path)
         logger_main.info(f"Task name: {args.task_name}")
     else:
-        logger_main = get_logger('main')
+        logger_main = get_logger('main', main_logger_level=args.log_level.upper())
     try:
         run(args, logger_main)
     except Exception as e:
