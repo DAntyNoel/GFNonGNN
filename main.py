@@ -234,6 +234,7 @@ if __name__ == '__main__':
     if args.task_name != '':
         # setup task env
         args.save_path = osp.join(args.save_path, args.project_name)
+        os.makedirs(args.save_path, exist_ok=True)
         args.task_name = get_next_run_name(args.save_path, args.task_name)
         save_path = osp.join(args.save_path, args.task_name)
         if os.path.exists(save_path):
