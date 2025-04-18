@@ -153,13 +153,11 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
         # train GFN
         if not params.gnn_only and epoch % params.gfn_train_interval == 0:
             logger.info(f'GFN train at epoch {epoch}!')
-            logger.debug(f"run GFN train start HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             GFN.set_evaluate_tools(
                 params.best_gnn_model_path, F.cross_entropy, data.x, data.y, data.train_mask
             )
             loss_gfn_ls = []
             time_gfn_ls = []
-            logger.debug(f"run GFN set_evaluate_tools HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             
             for train_step in range(1, params.gfn_train_steps+1):
                 start_time = time.time()
@@ -192,7 +190,6 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
                 for mask in [data.train_mask, data.val_mask, data.test_mask]:
                     accs.append(int((pred[mask] == data.y[mask]).sum()) / int(mask.sum()))
             train_acc, val_acc, tmp_test_acc = accs
-            logger.debug(f"run HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
 
             if val_acc > best_val_acc:
                 bad_cnt = 0

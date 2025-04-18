@@ -143,7 +143,6 @@ class EdgeSelector(GFNBase):
             repeats: number of samples needed
         Returns:
             edge_index: (repeats, 2, num_edges_selected)'''
-        logger.debug(f"sample HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         states, log_rs = [], []
         for _ in range(max(1, (repeats - 1)//self.rollout_batch_size + 1)):
             state, done = self.init_state(self.rollout_batch_size, self.num_edges) # (rollout_batch_size, num_edges), (rollout_batch_size,)
@@ -204,7 +203,7 @@ class EdgeSelector(GFNBase):
                 'edge_index': edge_index,
             }
             self.buffer.add_rollout_batch(roll_out_batch)
-            
+
             b_arange = torch.arange(self.rollout_batch_size, device=edge_index.device)
             log_rs.append(traj_r[b_arange, traj_len[b_arange] - 1]) # (rollout_batch_size)
             states.append(traj_s[b_arange, :, traj_len[b_arange] - 1]) # (rollout_batch_size, num_edges)
@@ -226,7 +225,6 @@ class EdgeSelector(GFNBase):
         '''
         torch.cuda.empty_cache()
         self.optimizer.zero_grad()
-        logger.debug(f"train_gfn start HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
 
         # Sample a batch of rollout batches from the replay buffer
         batch_size = min(len(self.buffer), self.train_gfn_batch_size)
@@ -251,7 +249,6 @@ class EdgeSelector(GFNBase):
         )
 
         for i in range(batch_size):
-            logger.debug(f"train_gfn {i}/{batch_size} HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
             edge_index_i = edge_index_ls[i].to(state.device)
 
             pf_logits_i = self.model_Pf(state[i].unsqueeze(0), edge_index_i) # (1, num_edges_i+1)
@@ -280,9 +277,7 @@ class EdgeSelector(GFNBase):
         
         loss.backward()
         self.optimizer.step()
-        logger.debug(f"train_gfn finnal HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         del state, state_next, done, action, logr, logr_next, edge_index_ls, log_pf, flows, flows_next, log_pb
-        logger.debug(f"train_gfn del HIP memory: {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
         return loss.item()
     
     def state_dict(self):
