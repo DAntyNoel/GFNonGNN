@@ -55,10 +55,7 @@ class GATGFN(torch.nn.Module):
                 nn.Linear(self.hidden_dim, self.graph_level_output)
             )
         
-        if self.hidden_dim == self.heads * self.num_layers + 1:
-            self.x_to_alpha = nn.Identity()
-        else:
-            self.x_to_alpha = nn.Linear(self.num_layers * self.hidden_dim, self.num_layers * self.heads + 1)
+        self.x_to_alpha = nn.Linear(self.num_layers * self.hidden_dim, self.num_layers * self.heads + 1)
         self.read_out_logits = nn.Sequential(
             nn.Linear(self.num_layers * self.heads + 1, self.hidden_dim), nn.ReLU(),
             nn.Linear(self.hidden_dim, 1)
@@ -80,7 +77,7 @@ class GATGFN(torch.nn.Module):
         x = self.inp_transform(x) # (num_nodes, hidden_dim)
         x_ls, alpha_ls = [], []
         for layer in self.policy_model:
-            x = F.dropout(x, p=0.6, training=self.training)
+            # x = F.dropout(x, p=0.6, training=self.training)
             x, (edge_index, alpha) = layer(x, edge_index, return_attention_weights=True)
             # alpha: (total_num_edges, heads)
             x_ls.append(x)
@@ -132,7 +129,7 @@ class GATGFN(torch.nn.Module):
             state = torch.cat([state, done.unsqueeze(-1)], dim=1) # (batch_size, num_edges+1)
             pf_logits[state == 1] = -np.inf
             pf_undone = pf_logits[~done].softmax(dim=1) # (batch_size, num_edges+1)
-            pf_undone[:, -1] = pf_undone[:, -1] + length_penalty
+            pf_undone[:, -1] = pf_undone[:, -1] + length_penalty if length_penalty > 0. else 0
             pf_undone[:, :-1] = pf_undone[:, :-1] * (1. - length_penalty)
             sampled_indices = torch.multinomial(pf_undone, num_samples=1) # (batch_size, 1)
             action[~done] = action[~done].scatter_(dim=1, index=sampled_indices, value=1.0)
@@ -167,7 +164,7 @@ class GATGFN(torch.nn.Module):
         normalized_logits = (pf_logits - min_values) / (max_values - min_values)
         state = torch.cat([state, done.unsqueeze(-1)], dim=1) # (batch_size, num_edges+1)
         normalized_logits[state == 1] = 0
-        normalized_logits[:, e] = normalized_logits[:, e] * (1 - length_penalty) + length_penalty
+        normalized_logits[:, e] = normalized_logits[:, e] * (1 - length_penalty) + length_penalty if length_penalty > 0. else 0
         action = Bernoulli(normalized_logits).sample() # (batch_size, num_edges+1)
         action = action.bool()
         return action

@@ -138,16 +138,15 @@ class EdgeSelector(GFNBase):
             while not torch.all(done):
                 # Sample actions using the policy model
                 action_cnt = len(traj_s)
-                # logger.debug(f"sample HIP memory(round{action_cnt}): {torch.cuda.memory_allocated() / (1024.0 ** 3):.2f} GB")
                 if self.multi_edge:
                     action = self.model_Pf.mul_action(
                         state, done, edge_index, 
-                        length_penalty=float(action_cnt/self.max_traj_len)
+                        length_penalty=float((action_cnt-1)/self.max_traj_len)
                     ) # (rollout_batch_size, num_edges+1)
                 else:
                     action = self.model_Pf.action(
                         state, done, edge_index, 
-                        length_penalty=float(action_cnt/self.max_traj_len)
+                        length_penalty=float((action_cnt-1)/self.max_traj_len)
                     ) # (rollout_batch_size, num_edges+1)
                 # Update the state and done variables based on the selected actions
                 state, done = self.step(state, done, action)
@@ -170,7 +169,7 @@ class EdgeSelector(GFNBase):
             """
             traj_s is the dense bool tensor form of the union of traj_a
             """
-            traj_a = torch.stack(traj_a, dim=1) # (rollout_batch_size, max_traj_len-1)
+            traj_a = torch.stack(traj_a, dim=1) # (rollout_batch_size, num_edges, max_traj_len-1)
             """
             traj_a is tensor like 
             [ 4, 30, 86, 95, 96, 29, -1, -1],

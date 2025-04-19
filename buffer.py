@@ -32,7 +32,7 @@ class ReplayBufferDB(object):
             's': torch.stack(s, dim=0).to(device), # (batch_size, num_edges)
             's_next': torch.stack(s_n, dim=0).to(device), # (batch_size, num_edges)
             'done': torch.stack(d, dim=0).to(device), # (batch_size,)
-            'a': torch.stack(a, dim=0).to(device), # (batch_size,)
+            'a': torch.stack(a, dim=0).to(device), # (batch_size, num_edges)
             'r': torch.stack(r, dim=0).to(device), # (batch_size,)
             'r_next': torch.stack(r_n, dim=0).to(device), # (batch_size,)
             'edge_index': [ee.to(device) for ee in e], # list of (2, num_edges)
