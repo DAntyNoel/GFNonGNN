@@ -108,6 +108,7 @@ class EdgeSelector(GFNBase):
         self.max_traj_len = params.max_traj_len
         self.multi_edge = params.multi_edge
         self.norm_p = params.norm_p
+        self.inc_edge = params.inc_edge
 
         self.train_gfn_batch_size = params.train_gfn_batch_size
         self.optimizer = torch.optim.Adam(
@@ -206,9 +207,13 @@ class EdgeSelector(GFNBase):
         values, indices = log_rs.topk(repeats, dim=0, largest=True, sorted=False)
         states_fin = states[indices] # (repeats, num_edges)
         edge_index_fin = []
+        edge_mask = torch.zeros((self.num_edges,), dtype=torch.bool, device=edge_index.device)
         for r in range(repeats):
-            states = states_fin[r]
-            edge_index_fin.append(edge_index[:, states==0])
+            if self.inc_edge:
+                edge_mask = edge_mask | states_fin[r]
+            else:
+                edge_mask = states_fin[r]
+            edge_index_fin.append(edge_index[:, edge_mask])
         return edge_index_fin
 
     def train_gfn(self):

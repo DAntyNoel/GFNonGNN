@@ -51,6 +51,7 @@ class Argument(Tap):
     max_traj_len: int = 64
     multi_edge: bool = True 
     norm_p: bool = False # valid in multi_edge. A regularization term to the GFN loss.
+    inc_edge: bool = True # Incremental edge selection.
 
     train_gfn_batch_size: int = 32
     gfn_lr: float = 0.001
