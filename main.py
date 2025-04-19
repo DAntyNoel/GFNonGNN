@@ -162,7 +162,7 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
             for train_step in range(1, params.gfn_train_steps+1):
                 start_time = time.time()
                 gfn_train_cnt += 1
-                loss_gfn = GFN.train_gfn()
+                loss_gfn = GFN.train_gfn(x=data.x)
                 logger.debug(
                     f'Step: {train_step}, Total: {gfn_train_cnt}\n'
                     f'GFN_Loss: {loss_gfn:.4f}'

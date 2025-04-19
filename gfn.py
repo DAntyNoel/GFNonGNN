@@ -109,6 +109,7 @@ class EdgeSelector(GFNBase):
         self.multi_edge = params.multi_edge
         self.norm_p = params.norm_p
         self.inc_edge = params.inc_edge
+        self.feature_init = params.feature_init
 
         self.train_gfn_batch_size = params.train_gfn_batch_size
         self.optimizer = torch.optim.Adam(
@@ -120,15 +121,21 @@ class EdgeSelector(GFNBase):
         self.leaf_coef = params.leaf_coef # Origin DB w/o forward looking
 
     @torch.no_grad()
-    def sample(self, edge_index, repeats=1):
+    def sample(self, x, edge_index, repeats=1):
         '''
         Sample edges using the policy model
         Args:
+            x: (num_nodes, hidden_dim), required when feature_init = True, ignored otherwise
             edge_index: (2, num_edges)
             repeats: number of samples needed
         Returns:
             edge_index: (repeats, 2, num_edges_selected)'''
+        
         states, log_rs = [], []
+        if self.feature_init:
+            assert x is not None, 'x should be provided when feature_init = True'
+        else:
+            x = None
         for _ in range(max(1, (repeats - 1)//self.rollout_batch_size + 1)):
             state, done = self.init_state(self.rollout_batch_size, self.num_edges) # (rollout_batch_size, num_edges), (rollout_batch_size,)
             state = state.to(edge_index.device)
@@ -141,12 +148,12 @@ class EdgeSelector(GFNBase):
                 action_cnt = len(traj_s)
                 if self.multi_edge:
                     action = self.model_Pf.mul_action(
-                        state, done, edge_index, 
+                        state, done, edge_index, x,
                         length_penalty=float((action_cnt-1)/self.max_traj_len)
                     ) # (rollout_batch_size, num_edges+1)
                 else:
                     action = self.model_Pf.action(
-                        state, done, edge_index, 
+                        state, done, edge_index, x,
                         length_penalty=float((action_cnt-1)/self.max_traj_len)
                     ) # (rollout_batch_size, num_edges+1)
                 # Update the state and done variables based on the selected actions
@@ -216,12 +223,16 @@ class EdgeSelector(GFNBase):
             edge_index_fin.append(edge_index[:, edge_mask])
         return edge_index_fin
 
-    def train_gfn(self):
+    def train_gfn(self, x=None):
         '''
         Train the GFN policy model using the replay buffer
         '''
         torch.cuda.empty_cache()
         self.optimizer.zero_grad()
+        if self.feature_init:
+            assert x is not None, 'x should be provided when feature_init = True'
+        else:
+            x = None
 
         # Sample a batch of rollout batches from the replay buffer
         batch_size = min(len(self.buffer), self.train_gfn_batch_size)
@@ -252,13 +263,16 @@ class EdgeSelector(GFNBase):
             edge_index_i = edge_index_ls[i].to(state.device)
 
             if self.multi_edge:
-                _, pf_logits_i = self.model_Pf.action(state[i].unsqueeze(0), done[i].unsqueeze(0), edge_index_i, return_logits=True) # (1, num_edges_i+1)
+                _, pf_logits_i = self.model_Pf.action(
+                    state[i].unsqueeze(0), done[i].unsqueeze(0), edge_index_i, x,
+                    return_logits=True
+                ) # (1, num_edges_i+1)
                 now_selected_mask = action[i]
                 now_unselected_mask = ~now_selected_mask
                 selected = torch.cat([state[i] == 1, done[i].unsqueeze(0)], dim=0)
                 log_pf[i] = -(torch.sum(pf_logits_i[0, now_selected_mask & ~selected]) + torch.sum((1-pf_logits_i)[0, now_unselected_mask & ~selected]))
             else:
-                pf_logits_i = self.model_Pf(state[i].unsqueeze(0), edge_index_i) # (1, num_edges_i+1)
+                pf_logits_i = self.model_Pf(state[i].unsqueeze(0), edge_index_i, x) # (1, num_edges_i+1)
                 log_pf[i] = F.log_softmax(pf_logits_i, dim=1)[0, action[i]]
 
             if self.model_Pb is not None:
@@ -267,7 +281,7 @@ class EdgeSelector(GFNBase):
                 log_pb[i] = torch.prod(pb_logits_i[action[i]])
 
             two_states = torch.stack([state[i], state_next[i]], dim=0)
-            _, flow_logits = self.model_F(two_states, edge_index_i) # (2,)
+            _, flow_logits = self.model_F(two_states, edge_index_i, x) # (2,)
             flows[i], flows_next[i] = flow_logits[0], flow_logits[1]
         
         if self.norm_p and self.multi_edge:

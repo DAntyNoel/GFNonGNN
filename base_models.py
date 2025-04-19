@@ -30,7 +30,7 @@ class GCN(torch.nn.Module):
 
     def forward(self, x, edge_index, GFN:EdgeSelector=None):
         if GFN is not None:
-            edge_indexs = GFN.sample(edge_index, self.num_layers - 1)
+            edge_indexs = GFN.sample(x, edge_index, self.num_layers - 1)
         for i, conv in enumerate(self.convs):
             if GFN is not None:
                 if self._params.is_debug:
@@ -66,7 +66,7 @@ class GAT(torch.nn.Module):
 
     def forward(self, x, edge_index, GFN:EdgeSelector=None):
         if GFN is not None:
-            edge_indexs = GFN.sample(edge_index, self.num_layers - 1)
+            edge_indexs = GFN.sample(x, edge_index, self.num_layers - 1)
         for i, conv in enumerate(self.convs):
             if GFN is not None:
                 x = conv(x, edge_indexs[i])

@@ -43,6 +43,7 @@ class Argument(Tap):
     gfn_heads: int = 8
     gfn_dropout: float = 0.2
     max_degree: int = 100        # to be set later
+    feature_init: bool = False   # Whether to use the feature initialization method in GATGFN
     
     # EdgeSelector @ gfn.py
     use_pb: bool = False

@@ -34,8 +34,12 @@ class GATGFN(torch.nn.Module):
         self.heads = params.gfn_heads
         self.dropout = params.gfn_dropout
         self.graph_level_output = graph_level_output
+        self.feature_init = params.feature_init
 
-        self.input_embedding = nn.Embedding(params.max_degree+1, self.hidden_dim)
+        if self.feature_init:
+            self.input_embedding = nn.Linear(params.in_channels, self.hidden_dim)
+        else:
+            self.input_embedding = nn.Embedding(params.max_degree+1, self.hidden_dim)
         self.inp_transform = nn.Identity()
 
         self.policy_model = nn.ModuleList()
@@ -61,18 +65,22 @@ class GATGFN(torch.nn.Module):
             nn.Linear(self.hidden_dim, 1)
         )
 
-    def forward(self, state:torch.Tensor, edge_index:torch.Tensor):
+    def forward(self, state:torch.Tensor, edge_index:torch.Tensor, x:torch.Tensor=None):
         '''
         Forward pass of the GAT-based GFN model. All the batch should be the same graph.
         Args:
             state: (batch_size, num_edges)
             edge_index: (2, num_edges)
+            x: (num_nodes, hidden_dim), required when feature_init = True
         Returns:
             logits: (batch_size, num_edges+1)
             flows: (batch_size, )
         '''
         b, e = state.size()
-        x = get_degree(edge_index, edge_index.max().item()+1).to(edge_index.device) # (num_nodes,)
+        if self.feature_init:
+            assert x is not None, 'x should be provided when feature_init = True'
+        else:
+            x = get_degree(edge_index, edge_index.max().item()+1).to(edge_index.device) # (num_nodes,)
         x = self.input_embedding(x) # (num_nodes, hidden_dim)
         x = self.inp_transform(x) # (num_nodes, hidden_dim)
         x_ls, alpha_ls = [], []
@@ -107,22 +115,26 @@ class GATGFN(torch.nn.Module):
         
         return pf_logits 
 
-    def action(self, state, done, edge_index, length_penalty=0., return_logits=False):
+    def action(self, state, done, edge_index, x=None, length_penalty=0., return_logits=False):
         '''
         Sample actions using the policy model. If length_penalty -> 1, the action will tend to sample done.
         Args:
             state: (batch_size, num_edges)
             done: (batch_size,)
             edge_index: (2, num_edges)
-            length_penalty: float
+            x: (num_nodes, hidden_dim), required when feature_init = True
+            length_penalty: float,
+            return_logits: bool, whether to return the logits
         Returns:
             action: bool, (batch_size, num_edges+1)
         '''
         self.eval()
         b, e = state.size()
+        if self.feature_init:
+            assert x is not None, 'x should be provided when feature_init = True'
         with torch.no_grad():
             action = torch.full((b, e+1), False, dtype=torch.bool, device=state.device)
-            pf_logits = self(state, edge_index)
+            pf_logits = self(state, edge_index, x)
             if self.graph_level_output > 0:
                 pf_logits = pf_logits[0]
             pf_logits = pf_logits.reshape(b, -1)
@@ -139,22 +151,26 @@ class GATGFN(torch.nn.Module):
                 return action, logits
             return action
 
-    def mul_action(self, state, done, edge_index, length_penalty=0.):
+    def mul_action(self, state, done, edge_index, x=None, length_penalty=0.):
         '''
         Sample actions using the policy model. If length_penalty -> 1, the action will tend to sample done.
         Args:
             state: (batch_size, num_edges)
             done: (batch_size,)
             edge_index: (2, num_edges)
-            length_penalty: float
+            x: (num_nodes, hidden_dim), required when feature_init = True
+            length_penalty: float,
+            return_logits: bool, whether to return the logits
         Returns:
             action: bool, (batch_size, num_edges+1)
         '''
         self.eval()
         b, e = state.size()
+        if self.feature_init:
+            assert x is not None, 'x should be provided when feature_init = True'
         with torch.no_grad():
             action = torch.full((b, e+1), False, dtype=torch.bool, device=state.device)
-            pf_logits = self(state, edge_index)
+            pf_logits = self(state, edge_index, x)
             if self.graph_level_output > 0:
                 pf_logits = pf_logits[0]
             pf_logits = pf_logits.reshape(b, -1) # (batch_size, num_edges+1)
