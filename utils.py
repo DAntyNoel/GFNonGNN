@@ -24,12 +24,18 @@ class Argument(Tap):
     eval_interval: int = 5
     gnn_only: bool = False
     patience: int = -1 # Early stopping patience
+    gnn_early_train: int = 0 
+    '''
+    Set the number of epochs to `early-train` GNN.
+    GNN used layers are increasing from 2 to GNN.num_layers during the `early-training`.
+    0 means no early training.
+    '''
 
     save_path: str = 'test'
     best_gnn_model_path: str = ''    # to be set later
     best_gfn_model_path: str = ''    # to be set later
     gfn_train_interval: int = 20
-    gfn_train_steps: int = 20
+    gfn_train_steps: int = 50
 
     # GNN @ base_models.py
     in_channels: int = 0         # to be set later

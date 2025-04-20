@@ -28,7 +28,7 @@ class GCN(torch.nn.Module):
             self.convs.append(GCNConv(self.hidden_channels, self.hidden_channels,
                                       normalize=not self.use_gdc))
 
-    def forward(self, x, edge_index, GFN:EdgeSelector=None):
+    def forward(self, x, edge_index, GFN:EdgeSelector=None, start_layer=-1):
         if GFN is not None:
             edge_indexs = GFN.sample(x, edge_index, self.num_layers - 1)
         for i, conv in enumerate(self.convs):
@@ -39,7 +39,10 @@ class GCN(torch.nn.Module):
             else:
                 x = conv(x, edge_index).relu()
             x = F.dropout(x, p=0.5, training=self.training)
-        x = F.dropout(x, p=0.5, training=self.training)
+            if i > start_layer > 0: 
+                # start_layer is the layer to train early GNN, so that
+                # the GFN can be trained with the early GNN features.
+                break
         x = self.out_conv(x, edge_index)
         return x
 
@@ -64,7 +67,7 @@ class GAT(torch.nn.Module):
         self.out_conv = GATConv(self.hidden_channels * self.heads, self.out_channels, heads=1,
                              concat=False, dropout=0.6)
 
-    def forward(self, x, edge_index, GFN:EdgeSelector=None):
+    def forward(self, x, edge_index, GFN:EdgeSelector=None, start_layer=-1):
         if GFN is not None:
             edge_indexs = GFN.sample(x, edge_index, self.num_layers - 1)
         for i, conv in enumerate(self.convs):
@@ -74,5 +77,10 @@ class GAT(torch.nn.Module):
             else:
                 x = conv(x, edge_index)
                 x = F.leaky_relu(x, negative_slope=0.2)
+            x = F.dropout(x, p=0.6, training=self.training)
+            if i > start_layer > 0:
+                # start_layer is the layer to train early GNN, so that
+                # the GFN can be trained with the early GNN features.
+                break
         x = self.out_conv(x, edge_index)
         return x

@@ -135,11 +135,12 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
     best_val_acc = test_acc = 0
     gfn_train_cnt = bad_cnt = 0
     for epoch in range(1, params.epochs + 1):
-        start = time.time()
         # train GNN
         model_gnn.train()
         optimizer.zero_grad()
-        out = model_gnn(data.x, data.edge_index, GFN)
+        if params.gnn_early_train > 0:
+            start_layer = max(1, params.num_layers * epoch // params.gnn_early_train)
+        out = model_gnn(data.x, data.edge_index, GFN, start_layer)
         loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
         loss.backward()
         optimizer.step()
@@ -151,7 +152,10 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
             wandb.log({'loss/GNN': float(loss), 'step_GNN': epoch})
 
         # train GFN
-        if not params.gnn_only and epoch % params.gfn_train_interval == 0:
+        if (not params.gnn_only 
+            and epoch % params.gfn_train_interval == 0
+            and epoch >= params.gnn_early_train > 0
+        ):
             logger.info(f'GFN train at epoch {epoch}!')
             GFN.set_evaluate_tools(
                 params.best_gnn_model_path, F.cross_entropy, data.x, data.y, data.train_mask
