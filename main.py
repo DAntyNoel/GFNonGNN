@@ -140,6 +140,8 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
         optimizer.zero_grad()
         if params.gnn_early_train > 0:
             start_layer = max(1, params.num_layers * epoch // params.gnn_early_train)
+        else:
+            start_layer = -1
         out = model_gnn(data.x, data.edge_index, GFN, start_layer)
         loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
         loss.backward()
@@ -154,7 +156,7 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
         # train GFN
         if (not params.gnn_only 
             and epoch % params.gfn_train_interval == 0
-            and epoch >= params.gnn_early_train > 0
+            and (epoch >= params.gnn_early_train or params.gnn_early_train <= 0)
         ):
             logger.info(f'GFN train at epoch {epoch}!')
             GFN.set_evaluate_tools(
