@@ -112,6 +112,7 @@ class EdgeSelector(GFNBase):
         self.feature_init = params.feature_init
 
         self.train_gfn_batch_size = params.train_gfn_batch_size
+        self.sample_repeats = params.sample_repeats
         self.optimizer = torch.optim.Adam(
             [param for sublist in self.parameters_ls for param in sublist],
             lr=params.gfn_lr,
@@ -136,7 +137,7 @@ class EdgeSelector(GFNBase):
             assert x is not None, 'x should be provided when feature_init = True'
         else:
             x = None
-        for _ in range(max(1, (repeats - 1)//self.rollout_batch_size + 1)):
+        for _ in range(max(1, (repeats * self.sample_repeats - 1)//self.rollout_batch_size + 1)):
             state, done = self.init_state(self.rollout_batch_size, self.num_edges) # (rollout_batch_size, num_edges), (rollout_batch_size,)
             state = state.to(edge_index.device)
             done = done.to(edge_index.device)

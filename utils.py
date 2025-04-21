@@ -24,7 +24,7 @@ class Argument(Tap):
     eval_interval: int = 5
     gnn_only: bool = False
     patience: int = -1 # Early stopping patience
-    gnn_early_train: int = 0 
+    gnn_early_train: int = 100 
     '''
     Set the number of epochs to `early-train` GNN.
     GNN used layers are increasing from 2 to GNN.num_layers during the `early-training`.
@@ -53,7 +53,7 @@ class Argument(Tap):
     
     # EdgeSelector @ gfn.py
     use_pb: bool = False
-    rollout_batch_size: int = 8
+    rollout_batch_size: int = 16
     num_edges: int = 0           # to be set later
     max_traj_len: int = 64
     multi_edge: bool = True 
@@ -61,6 +61,7 @@ class Argument(Tap):
     inc_edge: bool = True # Incremental edge selection.
 
     train_gfn_batch_size: int = 32
+    sample_repeats: int = 4
     gfn_lr: float = 0.001
     gfn_weight_decay: float = 0.00001
 
