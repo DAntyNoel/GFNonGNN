@@ -16,27 +16,28 @@ from base_models import GCN
 from utils import get_logger, Argument
 from network import get_degree
 from gfn import EdgeSelector
+from get_data import get_dataset
 
-def get_dataset(params:Argument):
-    path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'Planetoid')
-    dataset = Planetoid(path, params.dataset, transform=T.NormalizeFeatures())
-    data = dataset[0].to(params.device)
+# def get_dataset(params:Argument):
+#     path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'Planetoid')
+#     dataset = Planetoid(path, params.dataset, transform=T.NormalizeFeatures())
+#     data = dataset[0].to(params.device)
 
-    if params.use_gdc:
-        transform = T.GDC(
-            self_loop_weight=1,
-            normalization_in='sym',
-            normalization_out='col',
-            diffusion_kwargs=dict(method='ppr', alpha=0.05),
-            sparsification_kwargs=dict(method='topk', k=128, dim=0),
-            exact=True,
-        )
-        data = transform(data)
+#     if params.use_gdc:
+#         transform = T.GDC(
+#             self_loop_weight=1,
+#             normalization_in='sym',
+#             normalization_out='col',
+#             diffusion_kwargs=dict(method='ppr', alpha=0.05),
+#             sparsification_kwargs=dict(method='topk', k=128, dim=0),
+#             exact=True,
+#         )
+#         data = transform(data)
     
-    params.in_channels = dataset.num_features
-    params.out_channels = dataset.num_classes
+#     params.in_channels = dataset.num_features
+#     params.out_channels = dataset.num_classes
 
-    return data, params
+#     return data, params
 
 def get_models(params:Argument, data):
     model_gnn = GCN(params).to(params.device)

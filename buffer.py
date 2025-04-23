@@ -11,6 +11,8 @@ class ReplayBufferDB(object):
 
         self.buffer = []
         self.pos = 0
+        self.same_edge = params.same_edge
+        self.edge_index_ = None
 
     def __len__(self):
         return len(self.buffer)
@@ -22,12 +24,22 @@ class ReplayBufferDB(object):
     def add(self, content):
         if len(self.buffer) < self.size:
             self.buffer.append(None)
+        if self.same_edge:
+            if self.edge_index_ is None:
+                self.edge_index_ = content[-1]
+            else:
+                assert torch.equal(self.edge_index_, content[-1]), "Edge index mismatch"
+            content = content[:-1]
         self.buffer[self.pos] = content
         self.pos = (self.pos + 1) % self.size
     
-    @staticmethod
-    def get_DB_contents(contents:list, device):
-        s, s_n, d, a, r, r_n, e = zip(*contents)
+    def get_DB_contents(self, contents:list, device):
+        if self.same_edge:
+            assert self.edge_index_ is not None, "Edge index is None"
+            s, s_n, d, a, r, r_n= zip(*contents)
+            e = [self.edge_index_] * len(contents)
+        else:
+            s, s_n, d, a, r, r_n, e = zip(*contents)
         return {
             's': torch.stack(s, dim=0).to(device), # (batch_size, num_edges)
             's_next': torch.stack(s_n, dim=0).to(device), # (batch_size, num_edges)

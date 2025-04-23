@@ -9,6 +9,7 @@ class Argument(Tap):
 
     project_name: str = 'GFNonGNN'
     dataset: str = 'CiteSeer'
+    split: int = 0
     device: str = 'cuda'
     use_gdc: bool = False
     wandb: bool = False
@@ -74,6 +75,7 @@ class Argument(Tap):
     reward_scale: float = 0.1
 
     # ReplayBufferDB @ buffer.py
+    same_edge: bool = True
     buffer_size: int = 2000
 
     def configure(self):
