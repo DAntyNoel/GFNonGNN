@@ -2,6 +2,7 @@ import os
 import os.path as osp
 import shutil
 import time
+import json
 import wandb
 import logging
 
@@ -17,27 +18,6 @@ from utils import get_logger, Argument
 from network import get_degree
 from gfn import EdgeSelector
 from get_data import get_dataset
-
-# def get_dataset(params:Argument):
-#     path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'Planetoid')
-#     dataset = Planetoid(path, params.dataset, transform=T.NormalizeFeatures())
-#     data = dataset[0].to(params.device)
-
-#     if params.use_gdc:
-#         transform = T.GDC(
-#             self_loop_weight=1,
-#             normalization_in='sym',
-#             normalization_out='col',
-#             diffusion_kwargs=dict(method='ppr', alpha=0.05),
-#             sparsification_kwargs=dict(method='topk', k=128, dim=0),
-#             exact=True,
-#         )
-#         data = transform(data)
-    
-#     params.in_channels = dataset.num_features
-#     params.out_channels = dataset.num_classes
-
-#     return data, params
 
 def get_models(params:Argument, data):
     model_gnn = GCN(params).to(params.device)
@@ -132,8 +112,9 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
     else:
         logger.info(f"Run without wandb. Save path: {params.save_path}")
 
-    logger.info(f'Device: {params.device}')
-    best_val_acc = test_acc = 0
+    logger.info(f'Device: {params.device}. Training on {params.dataset} dataset.')
+    start_time = time.time()
+    best_val_acc = test_acc = epoch_num = 0
     gfn_train_cnt = bad_cnt = 0
     for epoch in range(1, params.epochs + 1):
         # train GNN
@@ -200,6 +181,7 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
 
             if val_acc > best_val_acc:
                 bad_cnt = 0
+                epoch_num = epoch
                 logger.info(f'Best val at epoch {epoch}. Saved model!')
                 torch.save(model_gnn.state_dict(), params.best_gnn_model_path)
                 best_val_acc = val_acc
@@ -234,6 +216,22 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
     if params.wandb:
         wandb.run.summary["best_val_acc"] = best_val_acc
         wandb.finish()
+    # Save results
+    results = {
+        'best_val_acc': best_val_acc,
+        'test_acc@best_val_acc': test_acc,
+        'epoch@best_val_ac': epoch_num,
+
+        'final_train_acc': train_acc,
+        'final_val_acc': val_acc,
+        'final_test_acc': tmp_test_acc,
+
+        'time': time.time() - start_time,
+        'url': run.url if params.wandb else None,
+    }
+    with open(osp.join(params.save_path, 'results.json'), 'w') as f:
+        json.dump(results, f, indent=4)
+    logger.info(f"Saved results at {params.save_path}!\nTrain finished!\nTime: {time.time() - start_time:.4f}s\n\n")
 
 
 if __name__ == '__main__':
