@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Bernoulli
 
-from torch_geometric.nn import GATConv
+from base_models import GATConv
 
 from utils import get_logger
 
@@ -86,7 +86,7 @@ class GATGFN(torch.nn.Module):
         x_ls, alpha_ls = [], []
         for layer in self.policy_model:
             # x = F.dropout(x, p=0.6, training=self.training)
-            x, (edge_index, alpha) = layer(x, edge_index, return_attention_weights=True)
+            x, (edge_index, alpha) = layer(x, edge_index, return_raw_attention_weights=True)
             # alpha: (total_num_edges, heads)
             x_ls.append(x)
             alpha_ls.append(alpha)
