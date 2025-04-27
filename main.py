@@ -37,7 +37,7 @@ def get_models(params:Argument, data):
     params.max_degree = get_degree(data.edge_index.cpu(), data.num_nodes).max().item()
     params.num_edges = data.edge_index.size(1)
     if not params.gnn_only:
-        GFN = EdgeSelector(params, params.device)
+        GFN = EdgeSelector(params)
         gnn_model_frozen = GCN(params)
         gnn_model_frozen.load_state_dict(torch.load(best_gnn_model_path))
         gnn_model_frozen.to(params.device)
@@ -48,15 +48,18 @@ def get_models(params:Argument, data):
         GFN = None
     return params, model_gnn, optimizer, GFN
 
-def save_models(gnn_model, GFN:EdgeSelector, params:Argument, epoch=-1):
+def save_models(gnn_model, optimizer, GFN:EdgeSelector, params:Argument, epoch=-1):
     if epoch < 0:
         gnn_model_path = osp.join(params.save_path, 'gnn_model.pt')
+        optimizer_path = osp.join(params.save_path, 'optimizer.pt')
         gfn_model_path = osp.join(params.save_path, 'gfn_model.pt')
     else:
         gnn_model_path = osp.join(params.save_path, 'ckpt', f'Epoch_{epoch}_gnn_model.pt')
+        optimizer_path = osp.join(params.save_path, 'ckpt', f'Epoch_{epoch}_optimizer.pt')
         gfn_model_path = osp.join(params.save_path, 'ckpt', f'Epoch_{epoch}_gfn_model.pt')
         os.makedirs(osp.join(params.save_path, 'ckpt'), exist_ok=True)
     torch.save(gnn_model.state_dict(), gnn_model_path)
+    torch.save(optimizer.state_dict(), optimizer_path)
     if GFN is not None:
         torch.save(GFN.state_dict(), gfn_model_path)
     logger_main.info(f'Saved models at {params.save_path}!')
@@ -75,8 +78,8 @@ def get_next_run_name(save_path, base_name):
 
     return f"{base_name}-{next_index}"
 
-def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
-    data, params = get_dataset(args)
+def run(params:Argument, logger:logging.Logger, search_k_vs:dict={}):
+    data, params = get_dataset(params)
     params, model_gnn, optimizer, GFN = get_models(params, data)
     if params.task_name:
         params.save(osp.join(params.save_path, 'params.json'))
@@ -116,6 +119,7 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
     start_time = time.time()
     best_val_acc = test_acc = epoch_num = 0
     gfn_train_cnt = bad_cnt = 0
+
     for epoch in range(1, params.epochs + 1):
         # train GNN
         model_gnn.train()
@@ -128,9 +132,11 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
         loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
         loss.backward()
         optimizer.step()
+        model_gnn.now_epoch = epoch
         logger.info(
             f'Epoch: {epoch:04d}, \n'
-            f'Loss: {float(loss.detach()):.4f}'
+            f'Loss: {float(loss.detach()):.4f}, \n'
+            # f'GNN now epoch: {model_gnn.now_epoch}, \n'
         )
         if params.wandb:
             wandb.log({'loss/GNN': float(loss), 'step_GNN': epoch})
@@ -148,7 +154,7 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
             time_gfn_ls = []
             
             for train_step in range(1, params.gfn_train_steps+1):
-                start_time = time.time()
+                gfn_start_time = time.time()
                 gfn_train_cnt += 1
                 loss_gfn = GFN.train_gfn(x=data.x)
                 logger.debug(
@@ -156,7 +162,7 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
                     f'GFN_Loss: {loss_gfn:.4f}'
                 )
                 loss_gfn_ls.append(loss_gfn)
-                time_gfn_ls.append(time.time() - start_time)
+                time_gfn_ls.append(time.time() - gfn_start_time)
 
                 if params.wandb:
                     wandb.log({'loss/GFN': loss_gfn, "step_GFN":gfn_train_cnt})
@@ -183,11 +189,13 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
                 bad_cnt = 0
                 epoch_num = epoch
                 logger.info(f'Best val at epoch {epoch}. Saved model!')
+                logger.debug(f"GNN now epoch: {model_gnn.now_epoch}")
                 torch.save(model_gnn.state_dict(), params.best_gnn_model_path)
                 best_val_acc = val_acc
                 test_acc = tmp_test_acc
                 if GFN is not None:
                     torch.save(GFN.state_dict(), params.best_gfn_model_path)
+                    GFN.buffer.reset()
             else:
                 bad_cnt += 1
                 if bad_cnt > params.patience > 0:
@@ -209,10 +217,10 @@ def run(args:Argument, logger:logging.Logger, search_k_vs:dict={}):
                 })
             
         if params.save_interval > 0 and epoch % params.save_interval == 0:
-            save_models(model_gnn, GFN, params, epoch)
+            save_models(model_gnn, optimizer, GFN, params, epoch)
 
     if params.save_interval >= 0:
-        save_models(model_gnn, GFN, params)
+        save_models(model_gnn, optimizer, GFN, params)
     if params.wandb:
         wandb.run.summary["best_val_acc"] = best_val_acc
         wandb.finish()

@@ -42,6 +42,7 @@ class GFNBase(object):
         y = self.y
         mask = self.mask
         reward_ls = []
+        logger.debug(f"Evaluate GNN@{self.gnn_model.now_epoch}epoch.")
         # TODO 
         for i in range(b):
             state_i = state[i]
@@ -49,7 +50,9 @@ class GFNBase(object):
             loss = self.criterion(
                 self.gnn_model(x, edge_index_i)[mask], y[mask]
             )
+            # print(f"loss: {loss.item()}")
             reward = torch.exp(-loss / self.reward_scale) / self.reward_scale
+            # print(f"reward: {reward.item()}")
             reward_ls.append(reward)
         
         return torch.stack(reward_ls, dim=0).to(data_device) # (batch_size,)
@@ -88,16 +91,17 @@ class EdgeSelector(GFNBase):
     '''
     GFN model for edge selection
     '''
-    def __init__(self, params, device):
+    def __init__(self, params):
         super().__init__(params)
-        self.model_Pf = GATGFN(params).to(device)
-        self.model_F = GATGFN(params, graph_level_output=1).to(device)
+        self.device = params.device
+        self.model_Pf = GATGFN(params).to(self.device)
+        self.model_F = GATGFN(params, graph_level_output=1).to(self.device)
         self.parameters_ls = [
             list(self.model_Pf.parameters()),
             list(self.model_F.parameters()),
         ]
         if params.use_pb:
-            self.model_Pb = GATGFN(params).to(device)
+            self.model_Pb = GATGFN(params).to(self.device)
             self.parameters_ls.append(list(self.model_Pb.parameters()))
         else:
             self.model_Pb = None
@@ -122,7 +126,7 @@ class EdgeSelector(GFNBase):
         self.leaf_coef = params.leaf_coef # Origin DB w/o forward looking
 
     @torch.no_grad()
-    def sample(self, x, edge_index, repeats=1):
+    def sample(self, x, edge_index, repeats=1, return_edge_logits=False):
         '''
         Sample edges using the policy model
         Args:
@@ -130,7 +134,7 @@ class EdgeSelector(GFNBase):
             edge_index: (2, num_edges)
             repeats: number of samples needed
         Returns:
-            edge_index: (repeats, 2, num_edges_selected)'''
+            edge_indexs: list of (2, num_edges_i), where num_edges_i <= num_edges'''
         
         states, log_rs = [], []
         if self.feature_init:
@@ -222,6 +226,8 @@ class EdgeSelector(GFNBase):
             else:
                 edge_mask = states_fin[r]
             edge_index_fin.append(edge_index[:, edge_mask])
+        if return_edge_logits:
+            return edge_index_fin, (states_fin, values, log_rs)
         return edge_index_fin
 
     def train_gfn(self, x=None):

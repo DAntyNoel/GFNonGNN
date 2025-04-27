@@ -18,6 +18,8 @@ class GCN(torch.nn.Module):
         self.out_channels = params.out_channels
         self.use_gdc = params.use_gdc
         self.num_layers = params.num_layers
+        self.now_epoch = None
+        print('init')
 
         self.out_conv = GCNConv(self.hidden_channels, self.out_channels,
                              normalize=not self.use_gdc)
@@ -46,6 +48,19 @@ class GCN(torch.nn.Module):
         x = self.out_conv(x, edge_index)
         return x
 
+    def state_dict(self, destination=None, prefix='', keep_vars=False):
+        state_dict = super().state_dict(destination, prefix, keep_vars)
+        # Add now_epoch to the state_dict
+        state_dict[prefix + 'now_epoch'] = self.now_epoch
+        return state_dict
+
+    def load_state_dict(self, state_dict, strict=True):
+        self.now_epoch = state_dict.get('now_epoch', None)
+        # Remove now_epoch from the state_dict
+        if 'now_epoch' in state_dict:
+            del state_dict['now_epoch']
+        super().load_state_dict(state_dict, strict)
+        
 
 class GAT(torch.nn.Module):
     def __init__(self, params):

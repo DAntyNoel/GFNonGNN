@@ -85,6 +85,8 @@ class Argument(Tap):
         self.add_argument('-n', '--task_name')
         self.add_argument('-p', '--project_name')
         self.add_argument('-d', '--is_debug')
+        self.add_argument('-s', '--split')
+        self.add_argument('-ET', '--gnn_early_train')
 
 
 def get_logger(name, main_logger_level='INFO', task_folder=None, debug_folder='logs'):
