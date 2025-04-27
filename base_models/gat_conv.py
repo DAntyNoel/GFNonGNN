@@ -218,38 +218,38 @@ class GATConv(MessagePassing):
         glorot(self.att_edge)
         zeros(self.bias)
 
-    @overload
-    def forward(
-        self,
-        x: Union[Tensor, OptPairTensor],
-        edge_index: Adj,
-        edge_attr: OptTensor = None,
-        size: Size = None,
-        return_attention_weights: NoneType = None,
-    ) -> Tensor:
-        pass
+    # @overload
+    # def forward(
+    #     self,
+    #     x: Union[Tensor, OptPairTensor],
+    #     edge_index: Adj,
+    #     edge_attr: OptTensor = None,
+    #     size: Size = None,
+    #     return_attention_weights: NoneType = None,
+    # ) -> Tensor:
+    #     pass
 
-    @overload
-    def forward(  # noqa: F811
-        self,
-        x: Union[Tensor, OptPairTensor],
-        edge_index: Tensor,
-        edge_attr: OptTensor = None,
-        size: Size = None,
-        return_attention_weights: bool = None,
-    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
-        pass
+    # @overload
+    # def forward(  # noqa: F811
+    #     self,
+    #     x: Union[Tensor, OptPairTensor],
+    #     edge_index: Tensor,
+    #     edge_attr: OptTensor = None,
+    #     size: Size = None,
+    #     return_attention_weights: bool = None,
+    # ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    #     pass
 
-    @overload
-    def forward(  # noqa: F811
-        self,
-        x: Union[Tensor, OptPairTensor],
-        edge_index: SparseTensor,
-        edge_attr: OptTensor = None,
-        size: Size = None,
-        return_attention_weights: bool = None,
-    ) -> Tuple[Tensor, SparseTensor]:
-        pass
+    # @overload
+    # def forward(  # noqa: F811
+    #     self,
+    #     x: Union[Tensor, OptPairTensor],
+    #     edge_index: SparseTensor,
+    #     edge_attr: OptTensor = None,
+    #     size: Size = None,
+    #     return_attention_weights: bool = None,
+    # ) -> Tuple[Tensor, SparseTensor]:
+    #     pass
 
     def forward(  # noqa: F811
         self,
@@ -387,10 +387,7 @@ class GATConv(MessagePassing):
                     return out, (edge_index, alpha)
             elif isinstance(edge_index, SparseTensor):
                 return out, edge_index.set_value(alpha, layout='coo')
-        else:
-            return out
-        
-        if isinstance(return_raw_attention_weights, bool):
+        elif isinstance(return_raw_attention_weights, bool):
             if isinstance(edge_index, Tensor):
                 if is_torch_sparse_tensor(edge_index):
                     # TODO TorchScript requires to return a tuple

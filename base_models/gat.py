@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv
-
-from gfn import EdgeSelector
 from utils import get_logger
 
 logger = get_logger('GAT')
@@ -28,7 +26,7 @@ class GAT(torch.nn.Module):
         self.out_conv = GATConv(self.hidden_channels * self.heads, self.out_channels, heads=1,
                              concat=False, dropout=0.6)
 
-    def forward(self, x, edge_index, GFN:EdgeSelector=None, start_layer=-1):
+    def forward(self, x, edge_index, GFN=None, start_layer=-1):
         if GFN is not None:
             edge_indexs = GFN.sample(x, edge_index, self.num_layers - 1)
         for i, conv in enumerate(self.convs):

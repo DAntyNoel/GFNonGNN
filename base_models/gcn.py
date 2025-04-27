@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
-from gfn import EdgeSelector
 from utils import get_logger
 
 logger = get_logger('GCN')
@@ -18,7 +17,6 @@ class GCN(torch.nn.Module):
         self.use_gdc = params.use_gdc
         self.num_layers = params.num_layers
         self.now_epoch = None
-        print('init')
 
         self.out_conv = GCNConv(self.hidden_channels, self.out_channels,
                              normalize=not self.use_gdc)
@@ -29,7 +27,7 @@ class GCN(torch.nn.Module):
             self.convs.append(GCNConv(self.hidden_channels, self.hidden_channels,
                                       normalize=not self.use_gdc))
 
-    def forward(self, x, edge_index, GFN:EdgeSelector=None, start_layer=-1):
+    def forward(self, x, edge_index, GFN=None, start_layer=-1):
         if GFN is not None:
             edge_indexs = GFN.sample(x, edge_index, self.num_layers - 1)
         for i, conv in enumerate(self.convs):
@@ -48,7 +46,7 @@ class GCN(torch.nn.Module):
         return x
 
     def state_dict(self, destination=None, prefix='', keep_vars=False):
-        state_dict = super().state_dict(destination, prefix, keep_vars)
+        state_dict = super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
         # Add now_epoch to the state_dict
         state_dict[prefix + 'now_epoch'] = self.now_epoch
         return state_dict
