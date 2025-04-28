@@ -16,6 +16,7 @@ class Argument(Tap):
     task_name: str = ''
     log_level: str = 'INFO' # INFO, DEBUG, WARNING, ERROR
     overwrite: bool = False # overwrite existing tasks
+    use_profiler: bool = False # Whether to use torch.profiler
 
     sweep_id: str|None = None # Only be set in agent.py. Keep None when directly run main.py
 

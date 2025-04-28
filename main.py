@@ -9,6 +9,8 @@ import logging
 import torch
 import torch.nn.functional as F
 
+from torch.profiler import profile, ProfilerActivity, record_function
+from contextlib import contextmanager
 import torch_geometric.transforms as T
 from torch_geometric.datasets import Planetoid
 
@@ -18,6 +20,14 @@ from utils import get_logger, Argument
 from network import get_degree
 from gfn import EdgeSelector
 from get_data import get_dataset
+
+@contextmanager
+def profile_record(use_profiler, name):
+    if use_profiler:
+        with record_function(name):
+            yield
+    else:
+        yield
 
 def get_models(params:Argument, data):
     model_gnn = GCN(params).to(params.device)
@@ -121,100 +131,103 @@ def run(params:Argument, logger:logging.Logger, search_k_vs:dict={}):
     gfn_train_cnt = bad_cnt = 0
 
     for epoch in range(1, params.epochs + 1):
-        # train GNN
-        model_gnn.train()
-        optimizer.zero_grad()
-        if params.gnn_early_train > 0:
-            start_layer = max(1, params.num_layers * epoch // params.gnn_early_train)
-        else:
-            start_layer = -1
-        out = model_gnn(data.x, data.edge_index, GFN, start_layer)
-        loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
-        loss.backward()
-        optimizer.step()
-        model_gnn.now_epoch = epoch
-        logger.info(
-            f'Epoch: {epoch:04d}, \n'
-            f'Loss: {float(loss.detach()):.4f}, \n'
-            # f'GNN now epoch: {model_gnn.now_epoch}, \n'
-        )
-        if params.wandb:
-            wandb.log({'loss/GNN': float(loss), 'step_GNN': epoch})
-
-        # train GFN
-        if (not params.gnn_only 
-            and epoch % params.gfn_train_interval == 0
-            and (epoch >= params.gnn_early_train or params.gnn_early_train <= 0)
-        ):
-            logger.info(f'GFN train at epoch {epoch}!')
-            GFN.set_evaluate_tools(
-                params.best_gnn_model_path, F.cross_entropy, data.x, data.y, data.train_mask
-            )
-            loss_gfn_ls = []
-            time_gfn_ls = []
-            
-            for train_step in range(1, params.gfn_train_steps+1):
-                gfn_start_time = time.time()
-                gfn_train_cnt += 1
-                loss_gfn = GFN.train_gfn(x=data.x)
-                logger.debug(
-                    f'Step: {train_step}, Total: {gfn_train_cnt}\n'
-                    f'GFN_Loss: {loss_gfn:.4f}'
-                )
-                loss_gfn_ls.append(loss_gfn)
-                time_gfn_ls.append(time.time() - gfn_start_time)
-
-                if params.wandb:
-                    wandb.log({'loss/GFN': loss_gfn, "step_GFN":gfn_train_cnt})
-
-            loss_gfn_ls = torch.tensor(loss_gfn_ls)
-
+        with profile_record(params.use_profiler, f"Train GNN"):
+            # train GNN
+            model_gnn.train()
+            optimizer.zero_grad()
+            if params.gnn_early_train > 0:
+                start_layer = max(1, params.num_layers * epoch // params.gnn_early_train)
+            else:
+                start_layer = -1
+            out = model_gnn(data.x, data.edge_index, GFN, start_layer)
+            loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
+            loss.backward()
+            optimizer.step()
+            model_gnn.now_epoch = epoch
             logger.info(
-                f"GFN train done! Trained steps: {params.gfn_train_steps}. Total train steps: {gfn_train_cnt}\n"
-                f"GFN Loss: From {loss_gfn_ls[0]:.4f} to {loss_gfn_ls[-1]:.4f}. Min: {loss_gfn_ls.min().item():.4f}. Avg: {loss_gfn_ls.mean().item():.4f}\n"
-                f"GFN Time: {sum(time_gfn_ls):.4f}s. Median time per epoch: {torch.tensor(time_gfn_ls).median():.4f}s"
+                f'Epoch: {epoch:04d}, \n'
+                f'Loss: {float(loss.detach()):.4f}, \n'
+                # f'GNN now epoch: {model_gnn.now_epoch}, \n'
             )
+            if params.wandb:
+                wandb.log({'loss/GNN': float(loss), 'step_GNN': epoch})
+
+        with profile_record(params.use_profiler, f"Train GFN"):
+            # train GFN
+            if (not params.gnn_only 
+                and epoch % params.gfn_train_interval == 0
+                and (epoch >= params.gnn_early_train or params.gnn_early_train <= 0)
+            ):
+                logger.info(f'GFN train at epoch {epoch}!')
+                GFN.set_evaluate_tools(
+                    params.best_gnn_model_path, F.cross_entropy, data.x, data.y, data.train_mask
+                )
+                loss_gfn_ls = []
+                time_gfn_ls = []
+                
+                for train_step in range(1, params.gfn_train_steps+1):
+                    gfn_start_time = time.time()
+                    gfn_train_cnt += 1
+                    loss_gfn = GFN.train_gfn(x=data.x)
+                    logger.debug(
+                        f'Step: {train_step}, Total: {gfn_train_cnt}\n'
+                        f'GFN_Loss: {loss_gfn:.4f}'
+                    )
+                    loss_gfn_ls.append(loss_gfn)
+                    time_gfn_ls.append(time.time() - gfn_start_time)
+
+                    if params.wandb:
+                        wandb.log({'loss/GFN': loss_gfn, "step_GFN":gfn_train_cnt})
+
+                loss_gfn_ls = torch.tensor(loss_gfn_ls)
+
+                logger.info(
+                    f"GFN train done! Trained steps: {params.gfn_train_steps}. Total train steps: {gfn_train_cnt}\n"
+                    f"GFN Loss: From {loss_gfn_ls[0]:.4f} to {loss_gfn_ls[-1]:.4f}. Min: {loss_gfn_ls.min().item():.4f}. Avg: {loss_gfn_ls.mean().item():.4f}\n"
+                    f"GFN Time: {sum(time_gfn_ls):.4f}s. Median time per epoch: {torch.tensor(time_gfn_ls).median():.4f}s"
+                )
 
         if epoch % params.eval_interval == 0 or epoch == params.epochs:
-            # test
-            with torch.no_grad():
-                model_gnn.eval()
-                pred = model_gnn(data.x, data.edge_index, GFN).argmax(dim=-1)
-                accs = []
-                for mask in [data.train_mask, data.val_mask, data.test_mask]:
-                    accs.append(int((pred[mask] == data.y[mask]).sum()) / int(mask.sum()))
-            train_acc, val_acc, tmp_test_acc = accs
+            with profile_record(params.use_profiler, f"Eval GNN"):
+                # test
+                with torch.no_grad():
+                    model_gnn.eval()
+                    pred = model_gnn(data.x, data.edge_index, GFN).argmax(dim=-1)
+                    accs = []
+                    for mask in [data.train_mask, data.val_mask, data.test_mask]:
+                        accs.append(int((pred[mask] == data.y[mask]).sum()) / int(mask.sum()))
+                train_acc, val_acc, tmp_test_acc = accs
 
-            if val_acc > best_val_acc:
-                bad_cnt = 0
-                epoch_num = epoch
-                logger.info(f'Best val at epoch {epoch}. Saved model!')
-                logger.debug(f"GNN now epoch: {model_gnn.now_epoch}")
-                torch.save(model_gnn.state_dict(), params.best_gnn_model_path)
-                best_val_acc = val_acc
-                test_acc = tmp_test_acc
-                if GFN is not None:
-                    torch.save(GFN.state_dict(), params.best_gfn_model_path)
-                    GFN.buffer.reset()
-            else:
-                bad_cnt += 1
-                if bad_cnt > params.patience > 0:
-                    logger.info(f'No improvement for {params.patience} epochs. Early stopping!')
-                    break
+                if val_acc > best_val_acc:
+                    bad_cnt = 0
+                    epoch_num = epoch
+                    logger.info(f'Best val at epoch {epoch}. Saved model!')
+                    logger.debug(f"GNN now epoch: {model_gnn.now_epoch}")
+                    torch.save(model_gnn.state_dict(), params.best_gnn_model_path)
+                    best_val_acc = val_acc
+                    test_acc = tmp_test_acc
+                    if GFN is not None:
+                        torch.save(GFN.state_dict(), params.best_gfn_model_path)
+                        GFN.buffer.reset()
+                else:
+                    bad_cnt += 1
+                    if bad_cnt > params.patience > 0:
+                        logger.info(f'No improvement for {params.patience} epochs. Early stopping!')
+                        break
 
-            logger.info(
-                f'Eval Accuracy: \n'
-                f'Train: {train_acc:.4f}, Val: {val_acc:.4f}, Test: {tmp_test_acc:.4f},\n'
-                f'Best Val: {best_val_acc:.4f}, Test: {test_acc:.4f}'
-            )
+                logger.info(
+                    f'Eval Accuracy: \n'
+                    f'Train: {train_acc:.4f}, Val: {val_acc:.4f}, Test: {tmp_test_acc:.4f},\n'
+                    f'Best Val: {best_val_acc:.4f}, Test: {test_acc:.4f}'
+                )
 
-            if params.wandb:
-                wandb.log({
-                    'acc/train': train_acc,
-                    'acc/val': val_acc,
-                    'acc/test': tmp_test_acc,
-                    'step_GNN': epoch
-                })
+                if params.wandb:
+                    wandb.log({
+                        'acc/train': train_acc,
+                        'acc/val': val_acc,
+                        'acc/test': tmp_test_acc,
+                        'step_GNN': epoch
+                    })
             
         if params.save_interval > 0 and epoch % params.save_interval == 0:
             save_models(model_gnn, optimizer, GFN, params, epoch)
@@ -266,7 +279,22 @@ if __name__ == '__main__':
         logger_main = get_logger('main', main_logger_level=args.log_level.upper())
 
     try:
-        run(args, logger_main)
+        if args.use_profiler:
+            with profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                profile_memory=True,
+                record_shapes=True,
+                with_stack=True,
+            ) as prof:
+                run(args, logger_main)
+            prof.export_chrome_trace(osp.join(args.save_path, 'profiler_trace.json'))
+            output_file = osp.join(args.save_path, 'profiler_results.txt')
+            with open(output_file, "w") as f:
+                f.write(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+            logger_main.info(f"Profiler results saved to {output_file}")
+            logger_main.info(f"Profiler trace saved to {osp.join(args.save_path, 'profiler_trace.json')}")
+        else:
+            run(args, logger_main)
     except Exception as e:
         import traceback
         traceback.print_exc()

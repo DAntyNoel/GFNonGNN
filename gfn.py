@@ -56,7 +56,7 @@ class GFNBase(object):
             if self.reward_type == 1:
                 reward = -torch.exp(loss * self.reward_scale)
             elif self.reward_type == 2:
-                reward = -loss * self.reward_scale
+                reward = -torch.log2(loss * self.reward_scale)
             else:
                 reward = torch.exp(-loss * self.reward_scale)
             # print(f"reward: {reward.item()}")
