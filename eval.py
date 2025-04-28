@@ -36,14 +36,14 @@ def visualize_states(states_fin, values, max_cols=1000):
     # 将 values 转换为与 states_fin 形状相匹配的矩阵
     values_matrix = np.repeat(values[:, np.newaxis], num_edges, axis=1)
    
-    num_blocks = int(np.ceil(num_edges / max_cols))
+    num_blocks = max(1, int(np.ceil(num_edges / max_cols)))
     for i in range(num_blocks):
         start_col = i * max_cols
         end_col = min((i + 1) * max_cols, num_edges)
         plt.figure(figsize=(10, 3))
         plt.imshow(states_fin[:, start_col:end_col], cmap=cmap, aspect=1)
         plt.title(f"GFN samples and reward Block {i+1}/{num_blocks} (repeats={repeats}, num_edges={end_col - start_col})")
-        plt.xlabel("edges (black = selected)")
+        plt.xlabel("edges (red = selected)")
         plt.ylabel("repeats")
 
         plt.imshow(values_matrix[:, start_col:end_col], cmap='viridis', aspect=1, alpha=0.5)

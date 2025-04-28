@@ -45,6 +45,7 @@ class Argument(Tap):
     num_layers: int = 8
     gfn_sample_result_path: str = '' # Whether to save the GFN sample result.
     save_gfn_sample_result: bool = False # Control to save the GFN sample result.
+    save_num_edges: int = -1 # to conserve memory.
 
     # GATGFN @ network.py
     gfn_hidden_dim: int = 128

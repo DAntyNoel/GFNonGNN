@@ -19,6 +19,7 @@ class GCN(torch.nn.Module):
 
         self.gfn_sample_result_path = params.gfn_sample_result_path
         self.save_gfn_sample_result = params.save_gfn_sample_result
+        self.save_num_edges = params.save_num_edges
 
         self.now_epoch = None
         self.out_conv = GCNConv(self.hidden_channels, self.out_channels,
@@ -36,7 +37,7 @@ class GCN(torch.nn.Module):
             if self.save_gfn_sample_result:
                 # Save the GFN sample result
                 result = torch.load(self.gfn_sample_result_path)
-                states_fin = states_fin.unsqueeze(0)
+                states_fin = states_fin[:, :self.save_num_edges].unsqueeze(0)
                 values = values.unsqueeze(0)
                 if result['states_fin'] is None:
                     result['states_fin'] = states_fin
