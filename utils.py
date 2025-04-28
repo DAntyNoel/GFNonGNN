@@ -43,6 +43,8 @@ class Argument(Tap):
     hidden_channels: int = 256
     out_channels: int = 0        # to be set later
     num_layers: int = 8
+    gfn_sample_result_path: str = '' # Whether to save the GFN sample result.
+    save_gfn_sample_result: bool = False # Control to save the GFN sample result.
 
     # GATGFN @ network.py
     gfn_hidden_dim: int = 128
@@ -72,7 +74,8 @@ class Argument(Tap):
     # GFNBase @ gfn.py
     evaluate_device: str = 'cuda' # TODO: 'cpu' cannot run. 
     check_step_action: bool = False
-    reward_scale: float = 0.1
+    reward_scale: float = 10.0
+    reward_type: int = 0
 
     # ReplayBufferDB @ buffer.py
     same_edge: bool = True

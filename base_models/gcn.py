@@ -16,8 +16,11 @@ class GCN(torch.nn.Module):
         self.out_channels = params.out_channels
         self.use_gdc = params.use_gdc
         self.num_layers = params.num_layers
-        self.now_epoch = None
 
+        self.gfn_sample_result_path = params.gfn_sample_result_path
+        self.save_gfn_sample_result = params.save_gfn_sample_result
+
+        self.now_epoch = None
         self.out_conv = GCNConv(self.hidden_channels, self.out_channels,
                              normalize=not self.use_gdc)
         self.convs = nn.ModuleList()
@@ -29,7 +32,21 @@ class GCN(torch.nn.Module):
 
     def forward(self, x, edge_index, GFN=None, start_layer=-1):
         if GFN is not None:
-            edge_indexs = GFN.sample(x, edge_index, self.num_layers - 1)
+            edge_indexs, (states_fin, values, log_rs) = GFN.sample(x, edge_index, self.num_layers - 1, return_edge_logits=True)
+            if self.save_gfn_sample_result:
+                # Save the GFN sample result
+                result = torch.load(self.gfn_sample_result_path)
+                states_fin = states_fin.unsqueeze(0)
+                values = values.unsqueeze(0)
+                if result['states_fin'] is None:
+                    result['states_fin'] = states_fin
+                    result['values'] = values
+                else:
+                    result['states_fin'] = torch.cat((result['states_fin'], states_fin), dim=0)
+                    result['values'] = torch.cat((result['values'], values), dim=0)
+                torch.save(result, self.gfn_sample_result_path)
+                
+                
         for i, conv in enumerate(self.convs):
             if GFN is not None:
                 if self._params.is_debug:

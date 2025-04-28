@@ -13,6 +13,7 @@ class GFNBase(object):
         self.device = params.evaluate_device
         self.check_step_action = params.check_step_action
         self.reward_scale = params.reward_scale
+        self.reward_type = params.reward_type
         self.gnn_model = None
         self.criterion = None
         self.x = None
@@ -43,6 +44,7 @@ class GFNBase(object):
         mask = self.mask
         reward_ls = []
         logger.debug(f"Evaluate GNN@{self.gnn_model.now_epoch}epoch.")
+        self.gnn_model.eval()
         # TODO 
         for i in range(b):
             state_i = state[i]
@@ -51,7 +53,12 @@ class GFNBase(object):
                 self.gnn_model(x, edge_index_i)[mask], y[mask]
             )
             # print(f"loss: {loss.item()}")
-            reward = torch.exp(-loss / self.reward_scale) / self.reward_scale
+            if self.reward_type == 1:
+                reward = -torch.exp(loss * self.reward_scale)
+            elif self.reward_type == 2:
+                reward = -loss * self.reward_scale
+            else:
+                reward = torch.exp(-loss * self.reward_scale)
             # print(f"reward: {reward.item()}")
             reward_ls.append(reward)
         
@@ -135,7 +142,7 @@ class EdgeSelector(GFNBase):
             repeats: number of samples needed
         Returns:
             edge_indexs: list of (2, num_edges_i), where num_edges_i <= num_edges'''
-        
+
         states, log_rs = [], []
         if self.feature_init:
             assert x is not None, 'x should be provided when feature_init = True'
@@ -215,16 +222,20 @@ class EdgeSelector(GFNBase):
 
         log_rs = torch.cat(log_rs, dim=0) # (>=repeats)
         states = torch.cat(states, dim=0) # (>=repeats, num_edges)
+        logger.debug(f"sample log_rs.shape: {log_rs.shape}, states.shape: {states.shape}")
         # Select final edges
         values, indices = log_rs.topk(repeats, dim=0, largest=True, sorted=False)
+        logger.debug(f"sample indices: {indices}")
         states_fin = states[indices] # (repeats, num_edges)
         edge_index_fin = []
         edge_mask = torch.zeros((self.num_edges,), dtype=torch.bool, device=edge_index.device)
         for r in range(repeats):
             if self.inc_edge:
-                edge_mask = edge_mask | states_fin[r]
+                edge_mask = edge_mask | (states_fin[r]==0)
+                # Save the edge_index of the selected edges
+                states_fin[r][edge_mask] = 0
             else:
-                edge_mask = states_fin[r]
+                edge_mask = states_fin[r]==0
             edge_index_fin.append(edge_index[:, edge_mask])
         if return_edge_logits:
             return edge_index_fin, (states_fin, values, log_rs)

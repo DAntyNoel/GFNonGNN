@@ -257,10 +257,14 @@ if __name__ == '__main__':
                 raise ValueError(f'Task folder {save_path} already exists. Use --overwrite to overwrite.')
         os.makedirs(save_path, exist_ok=True)
         args.save_path = save_path
+        if args.save_gfn_sample_result:
+            args.gfn_sample_result_path = osp.join(args.save_path, 'gfn_sample_result.pt')
+            torch.save({'states_fin':None, 'values':None}, args.gfn_sample_result_path)
         logger_main = get_logger('main', main_logger_level=args.log_level.upper(), task_folder=args.save_path)
         logger_main.info(f"Task name: {args.task_name}")
     else:
         logger_main = get_logger('main', main_logger_level=args.log_level.upper())
+
     try:
         run(args, logger_main)
     except Exception as e:
