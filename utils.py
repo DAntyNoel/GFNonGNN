@@ -35,7 +35,7 @@ class Argument(Tap):
     save_path: str = 'test'
     best_gnn_model_path: str = ''    # to be set later
     best_gfn_model_path: str = ''    # to be set later
-    gfn_train_interval: int = 20
+    gfn_train_interval: int = 50
     gfn_train_steps: int = 50
 
     # GNN @ base_models.py
@@ -53,7 +53,7 @@ class Argument(Tap):
     gfn_heads: int = 8
     gfn_dropout: float = 0.2
     max_degree: int = 100        # to be set later
-    feature_init: bool = False   # Whether to use the feature initialization method in GATGFN
+    feature_init: bool = True   # Whether to use the feature initialization method in GATGFN
     
     # EdgeSelector @ gfn.py
     use_pb: bool = False
@@ -65,7 +65,7 @@ class Argument(Tap):
     inc_edge: bool = True # Incremental edge selection.
 
     train_gfn_batch_size: int = 32
-    sample_repeats: int = 4
+    sample_repeats: int = 2
     gfn_lr: float = 0.001
     gfn_weight_decay: float = 0.00001
 
