@@ -32,7 +32,7 @@ def get_dataset(params):
         data = dataset[0]
         params.in_channels = dataset.num_features
         params.out_channels = dataset.num_classes
-    elif dataset_name in ['Cora_geom', 'CiteSeera_geom', 'PubMed_geom']:
+    elif dataset_name in ['Cora_geom', 'CiteSeer_geom', 'PubMed_geom']:
         dataset_name = dataset_name.split('_')[0]
         dataset = Planetoid(
             root=os.path.join(DATA_ROOT, 'Planetoid'), 
