@@ -2,11 +2,11 @@ import os
 import json
 from tap import Tap
 
+import matplotlib.pyplot as plt
+
 def summarize_results(directory, type_='summary'):
-    # 获取目录下的所有文件夹
     folders = [f for f in os.listdir(directory) if os.path.isdir(os.path.join(directory, f))]
     
-    # 初始化字典来存储数据
     data = {}
 
     if type_ == 'full':
@@ -21,25 +21,22 @@ def summarize_results(directory, type_='summary'):
     else:
         raise ValueError("Invalid type. Use 'summary' or 'full'.")
 
-    
-    # 遍历每个文件夹
     for folder in folders:
         folder_path = os.path.join(directory, folder)
         results_path = os.path.join(folder_path, 'results.json')
         
-        # 检查results.json是否存在
         if os.path.exists(results_path):
             with open(results_path, 'r') as file:
                 results = json.load(file)
                 data[folder] = results
 
-    # 提取数据并排序
     rows = []
     for folder, results in data.items():
         row = [folder]
         for key in all_keys:
-            row.append(results.get(key, 'N/A'))  # 如果某个key不存在，用'N/A'填充
+            row.append(results.get(key, 'N/A'))  
         rows.append(row)
+
     # 排序逻辑：根据 folder 名称中的 Data 部分排序
     def sort_key(folder):
         parts = folder.split('-')
@@ -48,24 +45,14 @@ def summarize_results(directory, type_='summary'):
 
     rows.sort(key=lambda x: sort_key(x[0]))
 
-    # 构建表格
-    # table = []
     header = ['Settings'] + all_keys
     table = [header] + rows
     
-    # for folder, results in data.items():
-    #     row = [folder]
-    #     for key in all_keys:
-    #         row.append(results.get(key, 'N/A'))  # 如果某个key不存在，用'N/A'填充
-    #     table.append(row)
-    
-    # 输出Markdown格式
     markdown_table = "| " + " | ".join(header) + " |\n"
     markdown_table += "| " + " | ".join(["---"] * len(header)) + " |\n"
     for row in table[1:]:
         markdown_table += "| " + " | ".join(map(str, row)) + " |\n"
     
-    # 输出LaTeX格式
     latex_table = "\\begin{table}\n"
     latex_table += "\\centering\n"
     latex_table += "\\begin{tabular}{" + "l" * len(header) + "}\n"
@@ -79,18 +66,85 @@ def summarize_results(directory, type_='summary'):
     
     return markdown_table, latex_table
 
+
+def plot_best_val_acc(directory):
+    pic_dir = os.path.join(directory, 'pic')
+    os.makedirs(pic_dir, exist_ok=True)
+
+    folders = [f for f in os.listdir(directory) if os.path.isdir(os.path.join(directory, f))]
+
+    # {dataset: {config: {layer: best_val_acc}}}
+    data = {}
+
+    for folder in folders:
+        folder_path = os.path.join(directory, folder)
+        results_path = os.path.join(folder_path, 'results.json')
+
+        if os.path.exists(results_path):
+            with open(results_path, 'r') as file:
+                results = json.load(file)
+                best_val_acc = results.get("best_val_acc", None)
+                if best_val_acc is not None:
+                    parts:list = folder.split('-')
+                    layer = next((part for part in parts if part.endswith('layer')), 'N/A')
+                    dataset = next((part for part in parts if part.startswith('Data')), '??')
+                    if layer in parts:
+                        parts.remove(layer) 
+                    if dataset in parts:
+                        parts.remove(dataset)
+                    layer = int(layer.replace('layer', ''))  
+                    dataset = dataset.replace('Data_', '')
+                    config = '-'.join(parts)  
+
+                    if dataset not in data:
+                        data[dataset] = {}
+                    if config not in data[dataset]:
+                        data[dataset][config] = {}
+                    data[dataset][config][layer] = best_val_acc
+
+    for dataset, configs in data.items():
+        plt.figure(figsize=(10, 6))
+
+        for config, layers in configs.items():
+            sorted_layers = sorted(layers.items())
+            layers, accuracies = zip(*sorted_layers)
+            line_style = '--' if 'base' in config else '-'
+
+            plt.plot(layers, accuracies, label=config, marker='o', linestyle=line_style)
+
+        plt.xlabel('Layer')
+        plt.ylabel('Best Validation Accuracy')
+        plt.title(f'Best Validation Accuracy vs. Layer for {dataset}')
+        plt.legend()
+        plt.grid(True)
+
+        pic_path = os.path.join(pic_dir, f'{dataset}.png')
+        plt.savefig(pic_path)
+        plt.close()
+
+    print(f"Pictures saved to: {pic_dir}")
+
+
 class Args(Tap):
     directory: str
     type_: str = 'summary'  # 'summary' or 'full'
+    md: bool = False  # If True, save as markdown
+    latex: bool = False  # If True, save as LaTeX
+    plot: bool = True  # If True, plot the results
 
     def configure(self):
         self.add_argument('-d', '--directory', type=str, required=True, help='Project directory containing the result folders.')
 
 if __name__ == '__main__':
     args = Args().parse_args()
-    markdown_table, latex_table = summarize_results(args.directory, args.type_)
+    if args.plot:
+        plot_best_val_acc(args.directory)
 
-    print("Markdown Table:")
-    print(markdown_table)
-    print("\nLaTeX Table:")
-    print(latex_table)
+    if args.md or args.latex:
+        markdown_table, latex_table = summarize_results(args.directory, args.type_)
+        if args.md:
+            print("Markdown Table:")
+            print(markdown_table)
+        if args.latex:
+            print("LaTeX Table:")
+            print(latex_table)
